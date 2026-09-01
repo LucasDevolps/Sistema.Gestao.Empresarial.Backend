@@ -31,6 +31,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<ApiRequestLog> ApiRequestLogs => Set<ApiRequestLog>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<InboxMessage> InboxMessages => Set<InboxMessage>();
+    public DbSet<MessageAuditLog> MessageAuditLogs => Set<MessageAuditLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -58,6 +60,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         ConfigurarAuditLog(modelBuilder.Entity<AuditLog>());
         ConfigurarApiRequestLog(modelBuilder.Entity<ApiRequestLog>());
         ConfigurarOutbox(modelBuilder.Entity<OutboxMessage>());
+        ConfigurarInbox(modelBuilder.Entity<InboxMessage>());
+        ConfigurarMessageAuditLog(modelBuilder.Entity<MessageAuditLog>());
 
         foreach (var entityType in modelBuilder.Model.GetEntityTypes()
                      .Where(x => typeof(IEntidadeExcluivel).IsAssignableFrom(x.ClrType)))
@@ -404,5 +408,40 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         builder.HasIndex(x => x.MessageId).IsUnique();
         builder.HasIndex(x => new { x.Status, x.ProximaTentativaEm, x.BloqueadoAte, x.OccurredAt });
         builder.HasIndex(x => x.CorrelationId);
+    }
+
+    private static void ConfigurarInbox(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<InboxMessage> builder)
+    {
+        builder.ToTable("InboxMessages");
+        ConfigurarBase(builder);
+        builder.Property(x => x.Consumer).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.EventType).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Payload).HasColumnType("nvarchar(max)").IsRequired();
+        builder.Property(x => x.TraceId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Status).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.Resultado).HasMaxLength(2000);
+        builder.Property(x => x.Erro).HasMaxLength(4000);
+        builder.Property(x => x.RecebidoEm).HasPrecision(3);
+        builder.Property(x => x.ProcessadoEm).HasPrecision(3);
+        builder.Property(x => x.UltimaTentativaEm).HasPrecision(3);
+        builder.HasIndex(x => new { x.MessageId, x.Consumer }).IsUnique();
+        builder.HasIndex(x => new { x.Status, x.RecebidoEm });
+        builder.HasIndex(x => x.CorrelationId);
+    }
+
+    private static void ConfigurarMessageAuditLog(
+        Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<MessageAuditLog> builder)
+    {
+        builder.ToTable("MessageAuditLogs");
+        ConfigurarBase(builder);
+        builder.Property(x => x.EventType).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Consumer).HasMaxLength(200).IsRequired();
+        builder.Property(x => x.Status).HasMaxLength(50).IsRequired();
+        builder.Property(x => x.TraceId).HasMaxLength(64).IsRequired();
+        builder.Property(x => x.Detalhe).HasMaxLength(4000);
+        builder.Property(x => x.OcorridoEm).HasPrecision(3);
+        builder.HasIndex(x => new { x.MessageId, x.Consumer, x.Tentativa });
+        builder.HasIndex(x => x.CorrelationId);
+        builder.HasIndex(x => x.OcorridoEm);
     }
 }

@@ -17,3 +17,15 @@ public interface IIntegrationEventPublisher
 {
     Task PublishAsync(IntegrationEventEnvelope message, CancellationToken cancellationToken);
 }
+
+public interface IIntegrationEventHandler
+{
+    bool CanHandle(string eventType, int eventVersion);
+    Task HandleAsync(IntegrationEventEnvelope message, CancellationToken cancellationToken);
+}
+
+public sealed class TransientTechnicalException(string message, Exception? innerException = null)
+    : Exception(message, innerException);
+
+public sealed class PermanentTechnicalException(string message, Exception? innerException = null)
+    : Exception(message, innerException);

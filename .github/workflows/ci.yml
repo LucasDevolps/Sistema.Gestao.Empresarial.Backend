@@ -2,7 +2,7 @@ name: backend-ci
 
 on:
   push:
-    branches: [main, master, develop]
+    branches: [main, master, develop, "feature/**"]
   pull_request:
     branches: [main, master, develop]
   workflow_dispatch:
@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Setup .NET from global.json
         uses: actions/setup-dotnet@v6

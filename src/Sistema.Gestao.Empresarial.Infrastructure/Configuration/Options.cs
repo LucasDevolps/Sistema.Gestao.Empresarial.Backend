@@ -103,6 +103,21 @@ public sealed class InboxOptions
 
     [Range(1, 20)]
     public int TransientRetryCount { get; init; } = 5;
+
+    [Range(1, 300)]
+    public int InitialRetryDelaySeconds { get; init; } = 2;
+
+    [Range(5, 3600)]
+    public int MaximumRetryDelaySeconds { get; init; } = 60;
+
+    [Range(1, 256)]
+    public int ConcurrentMessageLimit { get; init; } = 16;
+
+    [Required, MaxLength(200)]
+    public string QueueName { get; init; } = "sge-integration-events-v1";
+
+    [Required, MaxLength(200)]
+    public string ConsumerName { get; init; } = "IntegrationEventConsumer";
 }
 
 public sealed class AuditOptions

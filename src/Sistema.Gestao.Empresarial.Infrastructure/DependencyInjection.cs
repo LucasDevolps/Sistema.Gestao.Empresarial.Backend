@@ -72,6 +72,7 @@ public static class DependencyInjection
         services.AddSingleton<AuthenticationMetrics>();
         services.AddSingleton<PermissionMetrics>();
         services.AddSingleton<OutboxMetrics>();
+        services.AddSingleton<InboxMetrics>();
         services.AddSingleton<IPermissionCache, PermissionCache>();
         services.AddSingleton<ICredentialHasher, CredentialHasher>();
         services.AddSingleton<ITokenService, JwtTokenService>();
@@ -165,6 +166,7 @@ public static class DependencyInjection
                 .AddMeter(AuthenticationMetrics.MeterName)
                 .AddMeter(PermissionMetrics.MeterName)
                 .AddMeter(OutboxMetrics.MeterName)
+                .AddMeter(InboxMetrics.MeterName)
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddRuntimeInstrumentation()
