@@ -1,0 +1,90 @@
+name: backend-ci
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build, tests and images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      SGE_SQLSERVER_SA_PASSWORD: CiOnly_2026!Sql#Hospital9
+      SGE_RABBITMQ_USERNAME: sge_ci
+      SGE_RABBITMQ_PASSWORD: CiOnly_2026!Rabbit#Hospital7
+      SGE_JWT_SIGNING_KEY: CiOnly-Jwt-2026-Hospital-Workflow-Key-93
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET from global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: "**/packages.lock.json"
+
+      - name: Restore local tools
+        run: dotnet tool restore
+
+      - name: Restore locked dependencies
+        run: dotnet restore Sistema.Gestao.Empresarial.sln --locked-mode
+
+      - name: Verify formatting
+        run: dotnet format Sistema.Gestao.Empresarial.sln --no-restore --verify-no-changes
+
+      - name: Build
+        run: dotnet build Sistema.Gestao.Empresarial.sln --configuration Release --no-restore
+
+      - name: Test
+        run: >-
+          dotnet test Sistema.Gestao.Empresarial.sln
+          --configuration Release
+          --no-build
+          --no-restore
+          --logger "trx"
+          --results-directory TestResults
+
+      - name: Report vulnerable dependencies
+        run: dotnet list Sistema.Gestao.Empresarial.sln package --vulnerable --include-transitive
+
+      - name: Generate idempotent migration script
+        run: >-
+          dotnet tool run dotnet-ef migrations script
+          --idempotent
+          --project src/Sistema.Gestao.Empresarial.Infrastructure
+          --startup-project src/Sistema.Gestao.Empresarial.Infrastructure
+          --context AppDbContext
+          --configuration Release
+          --no-build
+          --output artifacts/migrations.sql
+
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+
+      - name: Build container images
+        run: docker compose build
+
+      - name: Upload test and migration artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-ci-artifacts
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            TestResults/**/*.trx
+            artifacts/migrations.sql

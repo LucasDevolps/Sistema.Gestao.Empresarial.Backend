@@ -1,0 +1,17 @@
+services:
+  api:
+    ports:
+      - "${SGE_API_PORT:-8080}:8080"
+
+  sqlserver:
+    ports:
+      - "${SGE_SQLSERVER_PORT:-1433}:1433"
+
+  redis:
+    ports:
+      - "${SGE_REDIS_PORT:-6379}:6379"
+
+  otel-collector:
+    ports:
+      - "${SGE_OTLP_GRPC_PORT:-4317}:4317"
+      - "${SGE_OTLP_HTTP_PORT:-4318}:4318"

@@ -1,0 +1,134 @@
+name: sistema-gestao-empresarial
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/Sistema.Gestao.Empresarial.Api/Dockerfile
+    environment: &application-environment
+      DOTNET_ENVIRONMENT: Development
+      ConnectionStrings__SqlServer: Server=sqlserver,1433;Database=SistemaGestaoEmpresarial;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD:?Defina SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True
+      Redis__Configuration: redis:6379,abortConnect=false
+      Redis__InstanceName: sge
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: 5672
+      RabbitMq__VirtualHost: /
+      RabbitMq__Username: ${SGE_RABBITMQ_USERNAME:?Defina SGE_RABBITMQ_USERNAME}
+      RabbitMq__Password: ${SGE_RABBITMQ_PASSWORD:?Defina SGE_RABBITMQ_PASSWORD}
+      OpenTelemetry__Enabled: "true"
+      OpenTelemetry__OtlpEndpoint: http://otel-collector:4317
+      Jwt__SigningKey: ${SGE_JWT_SIGNING_KEY:?Defina SGE_JWT_SIGNING_KEY}
+      ASPNETCORE_URLS: http://+:8080
+    expose:
+      - "8080"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: src/Sistema.Gestao.Empresarial.Worker/Dockerfile
+    environment:
+      <<: *application-environment
+      ASPNETCORE_URLS: http://+:8081
+    expose:
+      - "8081"
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      otel-collector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/health/live"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${SGE_SQLSERVER_SA_PASSWORD:?Defina SGE_SQLSERVER_SA_PASSWORD}
+    volumes:
+      - sql-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -C -Q \"SELECT 1\" -b -o /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2.1-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4.3.5-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: ${SGE_RABBITMQ_USERNAME:?Defina SGE_RABBITMQ_USERNAME}
+      RABBITMQ_DEFAULT_PASS: ${SGE_RABBITMQ_PASSWORD:?Defina SGE_RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    ports:
+      - "${SGE_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.153.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./deploy/otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
+    expose:
+      - "4317"
+      - "4318"
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "components"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+networks:
+  default:
+    name: sge-network
+
+volumes:
+  sql-data:
+  redis-data:
+  rabbitmq-data:
