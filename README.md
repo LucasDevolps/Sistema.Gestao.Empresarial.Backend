@@ -13,6 +13,7 @@ auditoria HTTP e publicação confiável pela Outbox. O desenho e as decisões d
 - autorização por permissões, deny-by-default e proteção contra autoelevação;
 - auditoria de request/response com mascaramento de dados sensíveis;
 - Transactional Outbox com publicação at-least-once pelo Worker;
+- Inbox durável, consumer idempotente, classificação de falhas e auditoria de mensagens;
 - health checks, logs estruturados, métricas e traces OpenTelemetry;
 - SQL Server, Redis, RabbitMQ, API, Worker e Collector executáveis via Compose;
 - testes unitários, integração e validação arquitetural de segurança.
@@ -125,9 +126,17 @@ e build das imagens. Os resultados TRX e o script SQL são publicados como artef
 temporários do workflow. O pipeline é executado para `main`, `master` e `develop`,
 além de pull requests e execução manual.
 
-## Próximo incremento
+## Inbox, retry e DLQ
 
-A próxima fatia implementa Inbox durável e consumers idempotentes, com classificação
-explícita entre falhas de negócio, validação, falhas técnicas transitórias e falhas
-permanentes. Violações conhecidas serão auditadas e confirmadas com ACK, sem retry ou
-DLQ; somente falhas técnicas apropriadas entrarão nessas políticas.
+O consumer `IntegrationEventConsumer` usa a chave única `(MessageId, Consumer)` e
+lock de linha no SQL Server para impedir efeitos duplicados entre réplicas. Cada
+tentativa fica preservada em `InboxMessages` e `MessageAuditLogs`.
+
+- regra de negócio: `REJEITADA_REGRA_NEGOCIO`, auditoria e ACK;
+- validação conhecida: `REJEITADA_VALIDACAO`, auditoria e ACK;
+- falha técnica transitória: retry exponencial configurável;
+- falha permanente ou retry esgotado: status `DLQ` e fila durável
+  `sge-integration-events-v1_error` do MassTransit.
+
+Nenhuma mensagem, tentativa ou auditoria é fisicamente apagada. A próxima fatia
+prevista implementará os casos de uso de funcionários e seus vínculos multi-hospital.

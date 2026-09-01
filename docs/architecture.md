@@ -313,7 +313,7 @@ padrão. A primeira implementação abaixo limita-se à fundação do item 1 e a
 do item 2; autenticação e mensageria não serão simuladas parcialmente de forma
 insegura.
 
-## 19. Estado após a sexta fatia
+## 19. Estado após a sétima fatia
 
 Foram implementados o modelo de usuário/perfil/permissão, sessão durável, índice
 único filtrado de sessão ativa, lock transacional de login no SQL Server, JWT,
@@ -337,5 +337,13 @@ de migrations, validação do Compose e build das imagens. A sexta fatia impleme
 publisher da Outbox no Worker com claim atômico SQL (`UPDLOCK`, `READPAST`,
 `ROWLOCK`), lease recuperável, backoff exponencial, erro permanente para envelope
 inválido, métricas/traces e publicação MassTransit. O contrato é at-least-once: uma
-tentativa repetida preserva o mesmo `MessageId`, e a Inbox do próximo incremento
-será a barreira idempotente contra efeitos duplicados.
+tentativa repetida preserva o mesmo `MessageId`, e a Inbox implementada na sétima
+fatia é a barreira idempotente contra efeitos duplicados.
+
+A sétima fatia adiciona `InboxMessages` e `MessageAuditLogs`, chave única por
+mensagem/consumer, lock pessimista de linha durante o efeito transacional, consumer
+MassTransit durável e métricas próprias. Violações de domínio e validação conhecida
+são persistidas como rejeição e recebem ACK. Somente `TransientTechnicalException`
+entra no retry exponencial; falhas permanentes, desconhecidas ou com tentativas
+esgotadas são persistidas como `DLQ` e encaminhadas à fila `_error` do endpoint. O
+histórico permanece no SQL mesmo se RabbitMQ ou suas filas forem perdidos.

@@ -19,8 +19,11 @@ builder.Services.AddInfrastructure(builder.Configuration, "Sistema.Gestao.Empres
 
 var rabbit = builder.Configuration.GetRequiredSection(RabbitMqOptions.SectionName).Get<RabbitMqOptions>()
     ?? throw new InvalidOperationException("A seção RabbitMq é obrigatória.");
+var inbox = builder.Configuration.GetRequiredSection(InboxOptions.SectionName).Get<InboxOptions>()
+    ?? throw new InvalidOperationException("A seção Inbox é obrigatória.");
 builder.Services.AddMassTransit(configurator =>
 {
+    configurator.AddConsumer<IntegrationEventConsumer>();
     configurator.ConfigureHealthCheckOptions(options => options.Tags.Add("ready"));
     configurator.UsingRabbitMq((context, bus) =>
     {
@@ -29,11 +32,30 @@ builder.Services.AddMassTransit(configurator =>
             host.Username(rabbit.Username);
             host.Password(rabbit.Password);
         });
-        bus.ConfigureEndpoints(context);
+        bus.ReceiveEndpoint(inbox.QueueName, endpoint =>
+        {
+            endpoint.Durable = true;
+            endpoint.AutoDelete = false;
+            endpoint.PrefetchCount = (ushort)inbox.ConcurrentMessageLimit;
+            endpoint.ConcurrentMessageLimit = inbox.ConcurrentMessageLimit;
+            endpoint.UseMessageRetry(retry =>
+            {
+                retry.Handle<TransientTechnicalException>();
+                retry.Exponential(
+                    inbox.TransientRetryCount,
+                    TimeSpan.FromSeconds(inbox.InitialRetryDelaySeconds),
+                    TimeSpan.FromSeconds(inbox.MaximumRetryDelaySeconds),
+                    TimeSpan.FromSeconds(inbox.InitialRetryDelaySeconds));
+            });
+            endpoint.ConfigureConsumer<IntegrationEventConsumer>(context);
+        });
     });
 });
 builder.Services.AddScoped<IIntegrationEventPublisher, MassTransitIntegrationEventPublisher>();
 builder.Services.AddScoped<IOutboxDispatcher, OutboxDispatcher>();
+builder.Services.AddScoped<IInboxProcessor, InboxProcessor>();
+builder.Services.AddScoped<IInboxFailureRecorder, InboxFailureRecorder>();
+builder.Services.AddScoped<IIntegrationEventHandler, AuditOnlyIntegrationEventHandler>();
 builder.Services.AddHostedService<OutboxPublisherWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
