@@ -17,4 +17,19 @@ public sealed class Profissao : EntidadeAuditavel
 
     public string Nome { get; private set; } = string.Empty;
     public string? Descricao { get; private set; }
+
+    public bool Atualizar(string nome, string? descricao, DateTimeOffset atualizadoEm)
+    {
+        var novoNome = Guard.TextoObrigatorio(nome, nameof(Nome), 150);
+        var novaDescricao = descricao?.Trim();
+        if (Nome == novoNome && Descricao == novaDescricao)
+        {
+            return false;
+        }
+
+        Nome = novoNome;
+        Descricao = novaDescricao;
+        MarcarAtualizacao(atualizadoEm);
+        return true;
+    }
 }

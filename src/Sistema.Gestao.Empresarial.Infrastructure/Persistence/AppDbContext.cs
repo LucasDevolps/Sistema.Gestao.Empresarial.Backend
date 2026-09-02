@@ -317,7 +317,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             SeedPermissao(5, "28E904DC-9D46-4F76-A735-681F8335D381", "PROFISSAO_CRIAR", "Criar profissões", seedDate),
             SeedPermissao(6, "163F7EB6-A167-457A-9974-E1EA759380C9", "SETOR_VISUALIZAR", "Visualizar setores", seedDate),
             SeedPermissao(7, "A4292AA5-27F2-4525-AD76-DC84DC95F19C", "SETOR_EDITAR", "Editar setores", seedDate),
-            SeedPermissao(8, "F47ED124-E9A8-4373-90C6-BA98E450AD5F", "USUARIO_GERENCIAR_PERMISSOES", "Gerenciar permissões de usuários", seedDate));
+            SeedPermissao(8, "F47ED124-E9A8-4373-90C6-BA98E450AD5F", "USUARIO_GERENCIAR_PERMISSOES", "Gerenciar permissões de usuários", seedDate),
+            SeedPermissao(9, "659C28FD-A7D5-489E-BD32-C809601EE3F0", "PROFISSAO_EDITAR", "Editar profissões", seedDate),
+            SeedPermissao(10, "B21B733D-30F3-4F28-8477-D5CE7517AE96", "CARGO_VISUALIZAR", "Visualizar cargos", seedDate),
+            SeedPermissao(11, "80A43A7A-4615-49C5-BBA8-08488439C687", "CARGO_CRIAR", "Criar cargos", seedDate),
+            SeedPermissao(12, "F45D589B-3234-4334-8CB7-15C4CA1AE245", "CARGO_EDITAR", "Editar cargos", seedDate),
+            SeedPermissao(13, "8F611DFC-3AF0-4FC0-9A97-EE76DE6E846D", "NIVEL_PROFISSIONAL_VISUALIZAR", "Visualizar níveis profissionais", seedDate));
     }
 
     private static object SeedPermissao(long id, string guid, string codigo, string descricao, DateTimeOffset date) =>

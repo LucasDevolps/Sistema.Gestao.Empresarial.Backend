@@ -7,6 +7,7 @@ using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
+using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
 using StackExchange.Redis;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.RealInfrastructure;
@@ -88,6 +89,9 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
             TimeProvider.System);
 
     public EmployeeService CreateEmployeeService(AppDbContext dbContext) =>
+        new(dbContext, TimeProvider.System);
+
+    public ProfessionalCatalogService CreateProfessionalCatalogService(AppDbContext dbContext) =>
         new(dbContext, TimeProvider.System);
 
     public CreateEmployeeRequest CreateEmployeeRequest(

@@ -5,6 +5,13 @@ public static class PermissionCodes
     public const string ViewEmployees = "FUNCIONARIO_VISUALIZAR";
     public const string CreateEmployees = "FUNCIONARIO_CRIAR";
     public const string EditEmployees = "FUNCIONARIO_EDITAR";
+    public const string ViewProfessions = "PROFISSAO_VISUALIZAR";
+    public const string CreateProfessions = "PROFISSAO_CRIAR";
+    public const string EditProfessions = "PROFISSAO_EDITAR";
+    public const string ViewPositions = "CARGO_VISUALIZAR";
+    public const string CreatePositions = "CARGO_CRIAR";
+    public const string EditPositions = "CARGO_EDITAR";
+    public const string ViewProfessionalLevels = "NIVEL_PROFISSIONAL_VISUALIZAR";
     public const string ManageUserPermissions = "USUARIO_GERENCIAR_PERMISSOES";
 }
 

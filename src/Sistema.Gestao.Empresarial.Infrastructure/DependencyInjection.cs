@@ -17,7 +17,9 @@ using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.Infrastructure.Security;
 using Sistema.Gestao.Empresarial.Infrastructure.Authorization;
 using Sistema.Gestao.Empresarial.Application.Employees;
+using Sistema.Gestao.Empresarial.Application.ProfessionalCatalogs;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
+using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
 using StackExchange.Redis;
 
 namespace Sistema.Gestao.Empresarial.Infrastructure;
@@ -85,6 +87,7 @@ public static class DependencyInjection
         services.AddScoped<IPermissionChecker, PermissionChecker>();
         services.AddScoped<IPermissionAdministrationService, PermissionAdministrationService>();
         services.AddScoped<IEmployeeService, EmployeeService>();
+        services.AddScoped<IProfessionalCatalogService, ProfessionalCatalogService>();
         services.AddScoped<IOutboxStore, OutboxStore>();
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(sqlConnection, sql =>
