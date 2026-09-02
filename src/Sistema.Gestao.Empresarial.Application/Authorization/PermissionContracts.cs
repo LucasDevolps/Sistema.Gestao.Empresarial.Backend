@@ -2,6 +2,9 @@ namespace Sistema.Gestao.Empresarial.Application.Authorization;
 
 public static class PermissionCodes
 {
+    public const string ViewEmployees = "FUNCIONARIO_VISUALIZAR";
+    public const string CreateEmployees = "FUNCIONARIO_CRIAR";
+    public const string EditEmployees = "FUNCIONARIO_EDITAR";
     public const string ManageUserPermissions = "USUARIO_GERENCIAR_PERMISSOES";
 }
 

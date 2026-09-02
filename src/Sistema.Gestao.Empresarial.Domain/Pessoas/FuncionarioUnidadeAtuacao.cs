@@ -34,11 +34,11 @@ public sealed class FuncionarioUnidadeAtuacao : EntidadeAuditavel
     public Funcionario Funcionario { get; private set; } = null!;
     public UnidadeHospitalar UnidadeHospitalar { get; private set; } = null!;
 
-    public void Encerrar(DateOnly dataFim, DateTimeOffset atualizadoEm)
+    public bool Encerrar(DateOnly dataFim, DateTimeOffset atualizadoEm)
     {
         if (!Ativo)
         {
-            return;
+            return false;
         }
 
         if (dataFim < DataInicio)
@@ -48,5 +48,6 @@ public sealed class FuncionarioUnidadeAtuacao : EntidadeAuditavel
 
         DataFim = dataFim;
         Inativar(atualizadoEm);
+        return true;
     }
 }

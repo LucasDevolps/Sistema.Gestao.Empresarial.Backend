@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -72,6 +73,21 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
         Assert.Contains(
             logout.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             authorization => authorization.Policy == AuthPolicies.ActiveSession);
+    }
+
+    [Fact]
+    public void Api_NaoDeveExporEndpointsHttpDelete()
+    {
+        _factory.CreateClient();
+        var deleteEndpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods
+                .Contains(HttpMethods.Delete, StringComparer.OrdinalIgnoreCase) == true)
+            .Select(endpoint => endpoint.RoutePattern.RawText)
+            .ToArray();
+
+        Assert.Empty(deleteEndpoints);
     }
 }
 

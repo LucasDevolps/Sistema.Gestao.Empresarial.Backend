@@ -16,6 +16,8 @@ using Sistema.Gestao.Empresarial.Infrastructure.Observability;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.Infrastructure.Security;
 using Sistema.Gestao.Empresarial.Infrastructure.Authorization;
+using Sistema.Gestao.Empresarial.Application.Employees;
+using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using StackExchange.Redis;
 
 namespace Sistema.Gestao.Empresarial.Infrastructure;
@@ -82,6 +84,7 @@ public static class DependencyInjection
         services.AddScoped<ISessionValidator>(provider => provider.GetRequiredService<AuthenticationService>());
         services.AddScoped<IPermissionChecker, PermissionChecker>();
         services.AddScoped<IPermissionAdministrationService, PermissionAdministrationService>();
+        services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IOutboxStore, OutboxStore>();
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlServer(sqlConnection, sql =>

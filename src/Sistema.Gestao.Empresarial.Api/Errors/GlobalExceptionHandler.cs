@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Sistema.Gestao.Empresarial.Application.Authentication;
 using Sistema.Gestao.Empresarial.Domain.Common;
 using Sistema.Gestao.Empresarial.Infrastructure.Authorization;
+using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Api.Auditing;
 
 namespace Sistema.Gestao.Empresarial.Api.Errors;
@@ -23,6 +24,7 @@ public sealed class GlobalExceptionHandler(
         {
             DomainException => (StatusCodes.Status422UnprocessableEntity, "Operação não permitida.", LogLevel.Warning),
             DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Conflito de concorrência.", LogLevel.Warning),
+            EmployeePersistenceConflictException => (StatusCodes.Status409Conflict, "Conflito de persistência.", LogLevel.Warning),
             SessionStoreUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Serviço de sessão temporariamente indisponível.", LogLevel.Error),
             PermissionCacheUnavailableException => (StatusCodes.Status503ServiceUnavailable, "Serviço de autorização temporariamente indisponível.", LogLevel.Error),
             TimeoutException => (StatusCodes.Status503ServiceUnavailable, "Operação temporariamente indisponível.", LogLevel.Error),
