@@ -363,3 +363,11 @@ vínculo ativo sob corrida, rollback atômico de domínio/auditoria/outbox, sess
 com lock SQL e autoridade Redis, deduplicação da Inbox transportada pelo RabbitMQ,
 rejeição de negócio com ACK e persistência do ciclo retry/DLQ. O banco temporário e
 os volumes do CI são descartados somente pela infraestrutura de teste.
+
+A décima fatia disponibiliza os catálogos profissionais exigidos pelo cadastro de
+funcionários. Profissões e cargos possuem consulta paginada, criação, atualização e
+ativação/inativação por `Guid`; níveis profissionais possuem consulta ordenada pelo
+campo estrutural `Ordem`. As mutações são idempotentes, protegidas por permissões
+configuráveis e persistem auditoria e Outbox na mesma transação. A inativação é
+rejeitada enquanto houver funcionário ativo usando o registro, preservando a
+consistência operacional sem apagar o histórico.

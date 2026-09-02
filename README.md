@@ -171,6 +171,33 @@ inativam o relacionamento e preservam todo o histórico; não existem endpoints
 HTTP `DELETE`. Cada alteração persiste `AuditLog` e `OutboxMessage` na mesma
 transação da mudança de domínio.
 
+## Catálogos profissionais
+
+Profissões e cargos são configuráveis, auditáveis e nunca removidos fisicamente.
+Níveis profissionais permanecem estruturados pelos registros `JR`, `PL` e `SR` e
+possuem consulta própria. Todos os endpoints exigem permissões específicas:
+
+```text
+GET   /api/profissoes
+GET   /api/profissoes/{professionGuid}
+POST  /api/profissoes
+PUT   /api/profissoes/{professionGuid}
+PATCH /api/profissoes/{professionGuid}/status
+
+GET   /api/cargos
+GET   /api/cargos/{positionGuid}
+POST  /api/cargos
+PUT   /api/cargos/{positionGuid}
+PATCH /api/cargos/{positionGuid}/status
+
+GET   /api/niveis-profissionais
+GET   /api/niveis-profissionais/{levelGuid}
+```
+
+Atualizações e mudanças de status são idempotentes. Uma profissão ou cargo usado
+por funcionário ativo não pode ser inativado. Toda mudança efetiva grava
+`AuditLog` e `OutboxMessage` na mesma transação SQL.
+
 ## Inbox, retry e DLQ
 
 O consumer `IntegrationEventConsumer` usa a chave única `(MessageId, Consumer)` e
@@ -183,6 +210,6 @@ tentativa fica preservada em `InboxMessages` e `MessageAuditLogs`.
 - falha permanente ou retry esgotado: status `DLQ` e fila durável
   `sge-integration-events-v1_error` do MassTransit.
 
-Nenhuma mensagem, tentativa ou auditoria é fisicamente apagada. A próxima fatia
-prevista aprofundará testes concorrentes com dependências reais e o hardening do
-pipeline de entrega.
+Nenhuma mensagem, tentativa ou auditoria é fisicamente apagada. Os testes
+`RealInfrastructure` exercitam concorrência e atomicidade usando SQL Server, Redis
+e RabbitMQ reais.
