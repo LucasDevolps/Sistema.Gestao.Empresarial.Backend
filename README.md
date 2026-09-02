@@ -120,11 +120,16 @@ deduplicação durável pela Inbox.
 
 ## Integração contínua
 
-O único workflow em `.github/workflows/ci.yml` valida formatação, build Release, testes,
+O workflow `.github/workflows/ci.yml` valida formatação, build Release, testes,
 dependências vulneráveis, script idempotente de migrations, configuração do Compose
-e build das imagens. Os resultados TRX e o script SQL são publicados como artefatos
-temporários do workflow. O pipeline é executado para `main`, `master` e `develop`,
-além de pull requests e execução manual.
+e build das imagens da API e do Worker. Os resultados TRX e o script SQL são
+publicados como artefatos temporários. As credenciais usadas no Compose são efêmeras,
+geradas e mascaradas em cada execução.
+
+O workflow `.github/workflows/codeql.yml` analisa os arquivos do GitHub Actions e o
+código C# com build manual baseado no `global.json` e restore travado. Workflows
+genéricos de aplicação desktop e de `Dockerfile` na raiz não são utilizados, pois
+não representam a arquitetura deste backend.
 
 ## Inbox, retry e DLQ
 
