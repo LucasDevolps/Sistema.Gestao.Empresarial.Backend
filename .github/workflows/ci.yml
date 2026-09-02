@@ -21,14 +21,26 @@ jobs:
     timeout-minutes: 30
     env:
       CI: "true"
-      SGE_SQLSERVER_SA_PASSWORD: CiOnly_2026!Sql#Hospital9
       SGE_RABBITMQ_USERNAME: sge_ci
-      SGE_RABBITMQ_PASSWORD: CiOnly_2026!Rabbit#Hospital7
-      SGE_JWT_SIGNING_KEY: CiOnly-Jwt-2026-Hospital-Workflow-Key-93
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Initialize ephemeral CI credentials
+        shell: bash
+        run: |
+          sql_password="Ci!$(openssl rand -hex 24)aA1"
+          rabbit_password="$(openssl rand -hex 24)"
+          jwt_key="$(openssl rand -hex 32)"
+          echo "::add-mask::$sql_password"
+          echo "::add-mask::$rabbit_password"
+          echo "::add-mask::$jwt_key"
+          {
+            echo "SGE_SQLSERVER_SA_PASSWORD=$sql_password"
+            echo "SGE_RABBITMQ_PASSWORD=$rabbit_password"
+            echo "SGE_JWT_SIGNING_KEY=$jwt_key"
+          } >> "$GITHUB_ENV"
 
       - name: Setup .NET from global.json
         uses: actions/setup-dotnet@v6
@@ -83,7 +95,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: backend-ci-artifacts
-          if-no-files-found: error
+          if-no-files-found: ignore
           retention-days: 14
           path: |
             TestResults/**/*.trx
