@@ -67,6 +67,8 @@ jobs:
           --configuration Release
           --no-build
           --no-restore
+          --filter "Category!=RealInfrastructure"
+          --collect "XPlat Code Coverage"
           --logger "trx"
           --results-directory TestResults
 
@@ -85,7 +87,44 @@ jobs:
           --output artifacts/migrations.sql
 
       - name: Validate Compose configuration
-        run: docker compose config --quiet
+        run: |
+          docker compose config --quiet
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml config --quiet
+
+      - name: Start real integration dependencies
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f docker-compose.ci.yml
+          up -d --wait
+          sqlserver redis rabbitmq
+
+      - name: Test with SQL Server, Redis and RabbitMQ
+        shell: bash
+        run: |
+          SGE_REAL_INFRASTRUCTURE_TESTS=true \
+          SGE_TEST_SQLSERVER="Server=localhost,1433;Database=master;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True" \
+          SGE_TEST_REDIS="localhost:6379,abortConnect=false" \
+          SGE_TEST_RABBITMQ_HOST="localhost" \
+          SGE_TEST_RABBITMQ_PORT="5672" \
+          SGE_TEST_RABBITMQ_USERNAME="${SGE_RABBITMQ_USERNAME}" \
+          SGE_TEST_RABBITMQ_PASSWORD="${SGE_RABBITMQ_PASSWORD}" \
+          dotnet test tests/Sistema.Gestao.Empresarial.IntegrationTests \
+            --configuration Release \
+            --no-build \
+            --no-restore \
+            --filter "Category=RealInfrastructure" \
+            --collect "XPlat Code Coverage" \
+            --logger "trx;LogFileName=real-infrastructure.trx" \
+            --results-directory TestResults/RealInfrastructure
+
+      - name: Stop real integration dependencies
+        if: always()
+        run: >-
+          docker compose
+          -f docker-compose.yml
+          -f docker-compose.ci.yml
+          down --volumes --remove-orphans
 
       - name: Build container images
         run: docker compose build
@@ -99,4 +138,5 @@ jobs:
           retention-days: 14
           path: |
             TestResults/**/*.trx
+            TestResults/**/coverage.cobertura.xml
             artifacts/migrations.sql
