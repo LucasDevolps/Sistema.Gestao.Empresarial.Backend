@@ -52,71 +52,74 @@ public sealed class AuthenticationService(
             return null;
         }
 
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        await using var authenticationLock = await AcquireUserLockAsync(initialUser.Id, cancellationToken);
-
-        var user = await dbContext.Usuarios.SingleAsync(x => x.Id == initialUser.Id, cancellationToken);
-        var passwordValid = initiallyValid && credentialHasher.VerifyHashedPassword(user.SenhaHash, request.Password);
-        if (!passwordValid || !user.Ativo || user.Bloqueado)
+        return await ExecuteWithStrategyAsync(async () =>
         {
-            if (!user.Bloqueado)
+            await using var transaction = await BeginTransactionAsync(cancellationToken);
+            await using var authenticationLock = await AcquireUserLockAsync(initialUser.Id, cancellationToken);
+
+            var user = await dbContext.Usuarios.SingleAsync(x => x.Id == initialUser.Id, cancellationToken);
+            var passwordValid = initiallyValid && credentialHasher.VerifyHashedPassword(user.SenhaHash, request.Password);
+            if (!passwordValid || !user.Ativo || user.Bloqueado)
             {
-                user.RegistrarLoginInvalido(timeProvider.GetUtcNow(), _sessionOptions.MaximumFailedLoginAttempts);
+                if (!user.Bloqueado)
+                {
+                    user.RegistrarLoginInvalido(timeProvider.GetUtcNow(), _sessionOptions.MaximumFailedLoginAttempts);
+                }
+
+                AddAuditAndOutbox("LoginFalhou", user.Guid, context, new { userGuid = user.Guid });
+                await dbContext.SaveChangesAsync(cancellationToken);
+                await CommitAsync(transaction, cancellationToken);
+                metrics.LoginFailed();
+                return null;
             }
 
-            AddAuditAndOutbox("LoginFalhou", user.Guid, context, new { userGuid = user.Guid });
+            var now = timeProvider.GetUtcNow();
+            var previousSessions = await dbContext.UsuariosSessoes
+                .Where(x => x.UsuarioId == user.Id && x.Ativo && !x.Revogado)
+                .ToListAsync(cancellationToken);
+            foreach (var previousSession in previousSessions)
+            {
+                previousSession.Revogar("NOVO_LOGIN", now);
+            }
+
+            user.RegistrarLoginValido(now);
+            var sessionId = Guid.NewGuid();
+            var token = tokenService.Create(user.Guid, sessionId, user.VersaoSessao, now);
+            var session = new UsuarioSessao(
+                Guid.NewGuid(),
+                user.Id,
+                sessionId,
+                token.Jti,
+                token.AccessTokenHash,
+                token.RefreshTokenHash,
+                user.VersaoSessao,
+                now,
+                now.AddDays(_sessionOptions.AbsoluteLifetimeDays),
+                context.IpAddress,
+                context.UserAgent);
+            dbContext.UsuariosSessoes.Add(session);
+
+            if (previousSessions.Count > 0)
+            {
+                AddAuditAndOutbox(
+                    "UsuarioLogadoEmNovoDispositivo",
+                    user.Guid,
+                    context,
+                    new { userGuid = user.Guid, sessionId });
+            }
+            AddAuditAndOutbox("LoginRealizado", user.Guid, context, new { userGuid = user.Guid, sessionId });
+
             await dbContext.SaveChangesAsync(cancellationToken);
+            await operationalStore.ReplaceActiveSessionAsync(
+                ToOperationalSession(user, session),
+                previousSessions.Select(x => x.SessionId).ToArray(),
+                cancellationToken);
             await CommitAsync(transaction, cancellationToken);
-            metrics.LoginFailed();
-            return null;
-        }
+            metrics.LoginSucceeded();
+            metrics.SessionRevoked(previousSessions.Count);
 
-        var now = timeProvider.GetUtcNow();
-        var previousSessions = await dbContext.UsuariosSessoes
-            .Where(x => x.UsuarioId == user.Id && x.Ativo && !x.Revogado)
-            .ToListAsync(cancellationToken);
-        foreach (var previousSession in previousSessions)
-        {
-            previousSession.Revogar("NOVO_LOGIN", now);
-        }
-
-        user.RegistrarLoginValido(now);
-        var sessionId = Guid.NewGuid();
-        var token = tokenService.Create(user.Guid, sessionId, user.VersaoSessao, now);
-        var session = new UsuarioSessao(
-            Guid.NewGuid(),
-            user.Id,
-            sessionId,
-            token.Jti,
-            token.AccessTokenHash,
-            token.RefreshTokenHash,
-            user.VersaoSessao,
-            now,
-            now.AddDays(_sessionOptions.AbsoluteLifetimeDays),
-            context.IpAddress,
-            context.UserAgent);
-        dbContext.UsuariosSessoes.Add(session);
-
-        if (previousSessions.Count > 0)
-        {
-            AddAuditAndOutbox(
-                "UsuarioLogadoEmNovoDispositivo",
-                user.Guid,
-                context,
-                new { userGuid = user.Guid, sessionId });
-        }
-        AddAuditAndOutbox("LoginRealizado", user.Guid, context, new { userGuid = user.Guid, sessionId });
-
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await operationalStore.ReplaceActiveSessionAsync(
-            ToOperationalSession(user, session),
-            previousSessions.Select(x => x.SessionId).ToArray(),
-            cancellationToken);
-        await CommitAsync(transaction, cancellationToken);
-        metrics.LoginSucceeded();
-        metrics.SessionRevoked(previousSessions.Count);
-
-        return ToResponse(token, sessionId, user.Guid, now);
+            return ToResponse(token, sessionId, user.Guid, now);
+        }, cancellationToken);
     }
 
     public async Task<AuthenticationResponse?> RefreshAsync(
@@ -133,41 +136,44 @@ public sealed class AuthenticationService(
             return null;
         }
 
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        await using var authenticationLock = await AcquireUserLockAsync(initialSession.UsuarioId, cancellationToken);
-        var session = await dbContext.UsuariosSessoes
-            .Include(x => x.Usuario)
-            .SingleAsync(x => x.Id == initialSession.Id, cancellationToken);
-        var now = timeProvider.GetUtcNow();
-
-        if (!TokenHashesEqual(session.RefreshTokenHash, presentedHash))
+        return await ExecuteWithStrategyAsync(async () =>
         {
-            await RevokeAllSessionsAsync(session.Usuario, "REUTILIZACAO_REFRESH_TOKEN", context, now, cancellationToken);
-            await CommitAsync(transaction, cancellationToken);
-            metrics.RefreshFailed();
-            return null;
-        }
+            await using var transaction = await BeginTransactionAsync(cancellationToken);
+            await using var authenticationLock = await AcquireUserLockAsync(initialSession.UsuarioId, cancellationToken);
+            var session = await dbContext.UsuariosSessoes
+                .Include(x => x.Usuario)
+                .SingleAsync(x => x.Id == initialSession.Id, cancellationToken);
+            var now = timeProvider.GetUtcNow();
 
-        if (!IsDurablyValid(session, session.Usuario, now, null))
-        {
-            if (session.Revogar("SESSAO_EXPIRADA", now))
+            if (!TokenHashesEqual(session.RefreshTokenHash, presentedHash))
             {
-                AddAuditAndOutbox("SessaoExpirada", session.Usuario.Guid, context, new { sessionId = session.SessionId });
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await RevokeAllSessionsAsync(session.Usuario, "REUTILIZACAO_REFRESH_TOKEN", context, now, cancellationToken);
+                await CommitAsync(transaction, cancellationToken);
+                metrics.RefreshFailed();
+                return null;
             }
-            await CommitAsync(transaction, cancellationToken);
-            metrics.RefreshFailed();
-            return null;
-        }
 
-        var token = tokenService.Create(session.Usuario.Guid, session.SessionId, session.VersaoSessao, now);
-        session.RotacionarTokens(token.Jti, token.AccessTokenHash, token.RefreshTokenHash, now);
-        AddAuditAndOutbox("RefreshRealizado", session.Usuario.Guid, context, new { sessionId = session.SessionId });
-        await dbContext.SaveChangesAsync(cancellationToken);
-        await operationalStore.RotateJtiAsync(session.SessionId, token.Jti, now, cancellationToken);
-        await CommitAsync(transaction, cancellationToken);
-        metrics.RefreshSucceeded();
-        return ToResponse(token, session.SessionId, session.Usuario.Guid, now);
+            if (!IsDurablyValid(session, session.Usuario, now, null))
+            {
+                if (session.Revogar("SESSAO_EXPIRADA", now))
+                {
+                    AddAuditAndOutbox("SessaoExpirada", session.Usuario.Guid, context, new { sessionId = session.SessionId });
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                await CommitAsync(transaction, cancellationToken);
+                metrics.RefreshFailed();
+                return null;
+            }
+
+            var token = tokenService.Create(session.Usuario.Guid, session.SessionId, session.VersaoSessao, now);
+            session.RotacionarTokens(token.Jti, token.AccessTokenHash, token.RefreshTokenHash, now);
+            AddAuditAndOutbox("RefreshRealizado", session.Usuario.Guid, context, new { sessionId = session.SessionId });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await operationalStore.RotateJtiAsync(session.SessionId, token.Jti, now, cancellationToken);
+            await CommitAsync(transaction, cancellationToken);
+            metrics.RefreshSucceeded();
+            return ToResponse(token, session.SessionId, session.Usuario.Guid, now);
+        }, cancellationToken);
     }
 
     public async Task LogoutAsync(
@@ -175,33 +181,38 @@ public sealed class AuthenticationService(
         AuthOperationContext context,
         CancellationToken cancellationToken)
     {
-        var user = await dbContext.Usuarios.SingleOrDefaultAsync(x => x.Guid == claims.UserGuid, cancellationToken);
-        if (user is null)
+        var initialUser = await dbContext.Usuarios.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Guid == claims.UserGuid, cancellationToken);
+        if (initialUser is null)
         {
             return;
         }
 
-        await using var transaction = await BeginTransactionAsync(cancellationToken);
-        await using var authenticationLock = await AcquireUserLockAsync(user.Id, cancellationToken);
-        user = await dbContext.Usuarios.SingleAsync(x => x.Id == user.Id, cancellationToken);
-        var sessions = await dbContext.UsuariosSessoes
-            .Where(x => x.UsuarioId == user.Id && x.Ativo && !x.Revogado)
-            .ToListAsync(cancellationToken);
-        var now = timeProvider.GetUtcNow();
-        var changed = false;
-        foreach (var session in sessions)
+        await ExecuteWithStrategyAsync(async () =>
         {
-            changed |= session.Revogar("LOGOUT_MANUAL", now);
-        }
+            await using var transaction = await BeginTransactionAsync(cancellationToken);
+            await using var authenticationLock = await AcquireUserLockAsync(initialUser.Id, cancellationToken);
+            var user = await dbContext.Usuarios.SingleAsync(x => x.Id == initialUser.Id, cancellationToken);
+            var sessions = await dbContext.UsuariosSessoes
+                .Where(x => x.UsuarioId == user.Id && x.Ativo && !x.Revogado)
+                .ToListAsync(cancellationToken);
+            var now = timeProvider.GetUtcNow();
+            var changed = false;
+            foreach (var session in sessions)
+            {
+                changed |= session.Revogar("LOGOUT_MANUAL", now);
+            }
 
-        if (changed)
-        {
-            AddAuditAndOutbox("SessaoRevogada", user.Guid, context, new { motivo = "LOGOUT_MANUAL" });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            metrics.SessionRevoked(sessions.Count);
-            await operationalStore.RemoveAsync(user.Guid, sessions.Select(x => x.SessionId).ToArray(), cancellationToken);
-        }
-        await CommitAsync(transaction, cancellationToken);
+            if (changed)
+            {
+                AddAuditAndOutbox("SessaoRevogada", user.Guid, context, new { motivo = "LOGOUT_MANUAL" });
+                await dbContext.SaveChangesAsync(cancellationToken);
+                metrics.SessionRevoked(sessions.Count);
+                await operationalStore.RemoveAsync(user.Guid, sessions.Select(x => x.SessionId).ToArray(), cancellationToken);
+            }
+            await CommitAsync(transaction, cancellationToken);
+            return true;
+        }, cancellationToken);
     }
 
     public async Task<bool> ValidateAsync(SessionTokenClaims claims, CancellationToken cancellationToken)
@@ -395,6 +406,25 @@ public sealed class AuthenticationService(
         return dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
             : null;
+    }
+
+    private async Task<T> ExecuteWithStrategyAsync<T>(
+        Func<Task<T>> operation,
+        CancellationToken cancellationToken)
+    {
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        var attempt = 0;
+
+        return await strategy.ExecuteAsync(async () =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Interlocked.Increment(ref attempt) > 1)
+            {
+                dbContext.ChangeTracker.Clear();
+            }
+
+            return await operation();
+        });
     }
 
     private async Task<IAsyncDisposable> AcquireUserLockAsync(long userId, CancellationToken cancellationToken)

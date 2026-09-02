@@ -47,6 +47,19 @@ Quando o Docker estiver disponível somente no WSL:
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/caminho/do/repositorio && docker compose up -d --build --wait'
 ```
 
+Os testes rápidos não exigem infraestrutura. A suíte concorrente real é habilitada
+explicitamente por `SGE_REAL_INFRASTRUCTURE_TESTS=true` e recebe conexões pelas
+variáveis `SGE_TEST_SQLSERVER`, `SGE_TEST_REDIS` e `SGE_TEST_RABBITMQ_*`. No CI, o
+Compose inicia dependências isoladas antes dessa categoria. Localmente, quando o
+Docker estiver disponível somente no WSL, execute:
+
+```powershell
+wsl bash ./scripts/run-real-integration-tests-wsl.sh
+```
+
+Sem a flag explícita, esses testes são marcados como ignorados para evitar que uma
+execução aparentemente integrada use dependências inexistentes.
+
 ## Autenticação
 
 Endpoints disponíveis:
@@ -124,8 +137,10 @@ deduplicação durável pela Inbox.
 O workflow `.github/workflows/ci.yml` valida formatação, build Release, testes,
 dependências vulneráveis, script idempotente de migrations, configuração do Compose
 e build das imagens da API e do Worker. Os resultados TRX e o script SQL são
-publicados como artefatos temporários. As credenciais usadas no Compose são efêmeras,
-geradas e mascaradas em cada execução.
+publicados como artefatos temporários junto à cobertura Cobertura. Uma etapa
+separada executa concorrência e atomicidade contra SQL Server, Redis e RabbitMQ
+reais. As credenciais usadas no Compose são efêmeras, geradas e mascaradas em cada
+execução.
 
 O workflow `.github/workflows/codeql.yml` analisa os arquivos do GitHub Actions e o
 código C# com build manual baseado no `global.json` e restore travado. Workflows

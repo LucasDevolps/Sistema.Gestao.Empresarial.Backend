@@ -355,3 +355,11 @@ enquanto as atuações podem abranger hospitais da mesma organização. Vínculo
 encerrados com data e status, nunca excluídos; períodos sobrepostos e duplicidades
 ativas são barrados no caso de uso e por índices únicos filtrados. Toda mutação
 relevante grava `AuditLog` e evento versionado na Outbox dentro da mesma transação.
+
+A nona fatia separa testes rápidos dos testes `RealInfrastructure`. O CI sobe SQL
+Server, Redis e RabbitMQ com credenciais efêmeras e executa migrations em banco
+isolado. A suíte valida matrícula concorrente por `SEQUENCE`, unicidade de e-mail e
+vínculo ativo sob corrida, rollback atômico de domínio/auditoria/outbox, sessão única
+com lock SQL e autoridade Redis, deduplicação da Inbox transportada pelo RabbitMQ,
+rejeição de negócio com ACK e persistência do ciclo retry/DLQ. O banco temporário e
+os volumes do CI são descartados somente pela infraestrutura de teste.
