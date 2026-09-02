@@ -347,3 +347,11 @@ são persistidas como rejeição e recebem ACK. Somente `TransientTechnicalExcep
 entra no retry exponencial; falhas permanentes, desconhecidas ou com tentativas
 esgotadas são persistidas como `DLQ` e encaminhadas à fila `_error` do endpoint. O
 histórico permanece no SQL mesmo se RabbitMQ ou suas filas forem perdidos.
+
+A oitava fatia implementa os casos de uso de funcionários: criação, consulta
+paginada, detalhe, edição profissional, inativação/reativação e gestão explícita de
+unidades de atuação e setores. A unidade de contratação permanece origem imutável,
+enquanto as atuações podem abranger hospitais da mesma organização. Vínculos são
+encerrados com data e status, nunca excluídos; períodos sobrepostos e duplicidades
+ativas são barrados no caso de uso e por índices únicos filtrados. Toda mutação
+relevante grava `AuditLog` e evento versionado na Outbox dentro da mesma transação.

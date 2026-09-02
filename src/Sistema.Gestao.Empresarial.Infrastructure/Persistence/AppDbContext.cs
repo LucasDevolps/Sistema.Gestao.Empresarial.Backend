@@ -47,7 +47,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         ConfigurarProfissao(modelBuilder.Entity<Profissao>());
         ConfigurarCargo(modelBuilder.Entity<Cargo>());
         ConfigurarNivel(modelBuilder.Entity<NivelProfissional>());
-        ConfigurarFuncionario(modelBuilder.Entity<Funcionario>());
+        ConfigurarFuncionario(modelBuilder.Entity<Funcionario>(), Database.IsRelational());
         ConfigurarAtuacao(modelBuilder.Entity<FuncionarioUnidadeAtuacao>());
         ConfigurarFuncionarioSetor(modelBuilder.Entity<FuncionarioSetor>());
         ConfigurarUsuario(modelBuilder.Entity<Usuario>());
@@ -199,7 +199,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             ExcluidoPor = (Guid?)null
         };
 
-    private static void ConfigurarFuncionario(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Funcionario> builder)
+    private static void ConfigurarFuncionario(
+        Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Funcionario> builder,
+        bool relationalDatabase)
     {
         builder.ToTable("Funcionarios");
         ConfigurarBase(builder);
@@ -207,12 +209,17 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             .HasMaxLength(20)
             .HasDefaultValueSql("CONCAT('FUN', RIGHT(REPLICATE('0', 9) + CONVERT(varchar(20), NEXT VALUE FOR [sge].[SequenciaMatriculaFuncionario]), 9))")
             .ValueGeneratedOnAdd();
+        if (!relationalDatabase)
+        {
+            // O provider InMemory não executa defaults SQL; a matrícula real continua sendo gerada pela SEQUENCE.
+            builder.Property(x => x.Matricula).IsRequired(false);
+        }
         builder.Property(x => x.Nome).HasMaxLength(200).IsRequired();
         builder.Property(x => x.Email).HasMaxLength(254).IsRequired();
         builder.Property(x => x.Telefone).HasMaxLength(30);
         builder.Property(x => x.DataAdmissao).HasColumnType("date");
         builder.HasIndex(x => x.Matricula).IsUnique();
-        builder.HasIndex(x => x.Email).HasFilter("[Excluido] = 0");
+        builder.HasIndex(x => x.Email).IsUnique().HasFilter("[Excluido] = 0");
         builder.HasOne(x => x.Profissao).WithMany().HasForeignKey(x => x.ProfissaoId);
         builder.HasOne(x => x.Cargo).WithMany().HasForeignKey(x => x.CargoId);
         builder.HasOne(x => x.Nivel).WithMany().HasForeignKey(x => x.NivelId);
@@ -225,8 +232,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         ConfigurarBase(builder);
         builder.Property(x => x.DataInicio).HasColumnType("date");
         builder.Property(x => x.DataFim).HasColumnType("date");
-        builder.HasIndex(x => new { x.FuncionarioId, x.UnidadeHospitalarId, x.Ativo })
-            .HasFilter("[Excluido] = 0");
+        builder.HasIndex(x => new { x.FuncionarioId, x.UnidadeHospitalarId })
+            .IsUnique()
+            .HasFilter("[Ativo] = 1 AND [Excluido] = 0");
         builder.HasOne(x => x.Funcionario).WithMany().HasForeignKey(x => x.FuncionarioId);
         builder.HasOne(x => x.UnidadeHospitalar).WithMany().HasForeignKey(x => x.UnidadeHospitalarId);
         builder.ToTable(t => t.HasCheckConstraint(
@@ -240,7 +248,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         ConfigurarBase(builder);
         builder.Property(x => x.DataInicio).HasColumnType("date");
         builder.Property(x => x.DataFim).HasColumnType("date");
-        builder.HasIndex(x => new { x.FuncionarioId, x.SetorId, x.Ativo }).HasFilter("[Excluido] = 0");
+        builder.HasIndex(x => new { x.FuncionarioId, x.SetorId })
+            .IsUnique()
+            .HasFilter("[Ativo] = 1 AND [Excluido] = 0");
         builder.HasOne(x => x.Funcionario).WithMany().HasForeignKey(x => x.FuncionarioId);
         builder.HasOne(x => x.Setor).WithMany().HasForeignKey(x => x.SetorId);
         builder.ToTable(t => t.HasCheckConstraint(

@@ -29,11 +29,11 @@ public sealed class FuncionarioSetor : EntidadeAuditavel
     public Funcionario Funcionario { get; private set; } = null!;
     public Setor Setor { get; private set; } = null!;
 
-    public void Encerrar(DateOnly dataFim, DateTimeOffset atualizadoEm)
+    public bool Encerrar(DateOnly dataFim, DateTimeOffset atualizadoEm)
     {
         if (!Ativo)
         {
-            return;
+            return false;
         }
 
         if (dataFim < DataInicio)
@@ -43,5 +43,6 @@ public sealed class FuncionarioSetor : EntidadeAuditavel
 
         DataFim = dataFim;
         Inativar(atualizadoEm);
+        return true;
     }
 }

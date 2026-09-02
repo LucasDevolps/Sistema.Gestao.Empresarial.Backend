@@ -14,6 +14,7 @@ auditoria HTTP e publicação confiável pela Outbox. O desenho e as decisões d
 - auditoria de request/response com mascaramento de dados sensíveis;
 - Transactional Outbox com publicação at-least-once pelo Worker;
 - Inbox durável, consumer idempotente, classificação de falhas e auditoria de mensagens;
+- funcionários com matrícula gerada pelo SQL e vínculos históricos multi-hospital;
 - health checks, logs estruturados, métricas e traces OpenTelemetry;
 - SQL Server, Redis, RabbitMQ, API, Worker e Collector executáveis via Compose;
 - testes unitários, integração e validação arquitetural de segurança.
@@ -131,6 +132,30 @@ código C# com build manual baseado no `global.json` e restore travado. Workflow
 genéricos de aplicação desktop e de `Dockerfile` na raiz não são utilizados, pois
 não representam a arquitetura deste backend.
 
+## Funcionários e vínculos multi-hospital
+
+Os endpoints usam somente `Guid` como identificador público e são protegidos pelas
+permissões `FUNCIONARIO_VISUALIZAR`, `FUNCIONARIO_CRIAR` e `FUNCIONARIO_EDITAR`:
+
+```text
+GET   /api/funcionarios
+GET   /api/funcionarios/{employeeGuid}
+POST  /api/funcionarios
+PUT   /api/funcionarios/{employeeGuid}
+PATCH /api/funcionarios/{employeeGuid}/status
+POST  /api/funcionarios/{employeeGuid}/unidades-atuacao
+POST  /api/funcionarios/{employeeGuid}/unidades-atuacao/{relationshipGuid}/encerrar
+POST  /api/funcionarios/{employeeGuid}/setores
+POST  /api/funcionarios/{employeeGuid}/setores/{relationshipGuid}/encerrar
+```
+
+A unidade de contratação é a origem imutável do vínculo e não limita a atuação.
+Unidades de atuação podem ser quaisquer hospitais ativos da mesma organização. Um
+setor exige atuação ativa na unidade correspondente. Encerramentos informam data,
+inativam o relacionamento e preservam todo o histórico; não existem endpoints
+HTTP `DELETE`. Cada alteração persiste `AuditLog` e `OutboxMessage` na mesma
+transação da mudança de domínio.
+
 ## Inbox, retry e DLQ
 
 O consumer `IntegrationEventConsumer` usa a chave única `(MessageId, Consumer)` e
@@ -144,4 +169,5 @@ tentativa fica preservada em `InboxMessages` e `MessageAuditLogs`.
   `sge-integration-events-v1_error` do MassTransit.
 
 Nenhuma mensagem, tentativa ou auditoria é fisicamente apagada. A próxima fatia
-prevista implementará os casos de uso de funcionários e seus vínculos multi-hospital.
+prevista aprofundará testes concorrentes com dependências reais e o hardening do
+pipeline de entrega.

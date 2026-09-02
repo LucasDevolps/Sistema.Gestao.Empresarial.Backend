@@ -13,6 +13,7 @@ public sealed class Funcionario : EntidadeAuditavel
         Guid guid,
         string nome,
         string email,
+        string? telefone,
         long profissaoId,
         long cargoId,
         long nivelId,
@@ -23,6 +24,7 @@ public sealed class Funcionario : EntidadeAuditavel
     {
         Nome = Guard.TextoObrigatorio(nome, nameof(Nome), 200);
         Email = Guard.TextoObrigatorio(email, nameof(Email), 254).ToLowerInvariant();
+        Telefone = NormalizarTelefone(telefone);
         ProfissaoId = ValidarId(profissaoId, "A profissão");
         CargoId = ValidarId(cargoId, "O cargo");
         NivelId = ValidarId(nivelId, "O nível profissional");
@@ -44,6 +46,42 @@ public sealed class Funcionario : EntidadeAuditavel
     public NivelProfissional Nivel { get; private set; } = null!;
     public UnidadeHospitalar UnidadeContratacao { get; private set; } = null!;
 
+    public bool AtualizarDados(
+        string nome,
+        string email,
+        string? telefone,
+        long profissaoId,
+        long cargoId,
+        long nivelId,
+        DateTimeOffset atualizadoEm)
+    {
+        var novoNome = Guard.TextoObrigatorio(nome, nameof(Nome), 200);
+        var novoEmail = Guard.TextoObrigatorio(email, nameof(Email), 254).ToLowerInvariant();
+        var novoTelefone = NormalizarTelefone(telefone);
+        profissaoId = ValidarId(profissaoId, "A profissão");
+        cargoId = ValidarId(cargoId, "O cargo");
+        nivelId = ValidarId(nivelId, "O nível profissional");
+
+        if (Nome == novoNome
+            && Email == novoEmail
+            && Telefone == novoTelefone
+            && ProfissaoId == profissaoId
+            && CargoId == cargoId
+            && NivelId == nivelId)
+        {
+            return false;
+        }
+
+        Nome = novoNome;
+        Email = novoEmail;
+        Telefone = novoTelefone;
+        ProfissaoId = profissaoId;
+        CargoId = cargoId;
+        NivelId = nivelId;
+        MarcarAtualizacao(atualizadoEm);
+        return true;
+    }
+
     private static long ValidarId(long id, string nome)
     {
         if (id <= 0)
@@ -52,5 +90,21 @@ public sealed class Funcionario : EntidadeAuditavel
         }
 
         return id;
+    }
+
+    private static string? NormalizarTelefone(string? telefone)
+    {
+        var normalizado = telefone?.Trim();
+        if (string.IsNullOrEmpty(normalizado))
+        {
+            return null;
+        }
+
+        if (normalizado.Length > 30)
+        {
+            throw new DomainException("Telefone deve possuir no máximo 30 caracteres.");
+        }
+
+        return normalizado;
     }
 }
