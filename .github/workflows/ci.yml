@@ -150,13 +150,14 @@ jobs:
           api worker nginx
 
       - name: Smoke test HTTPS proxy
-        run: >-
-          docker compose
-          -f docker-compose.yml
-          -f docker-compose.ci.yml
-          exec -T nginx
-          wget --no-check-certificate --quiet --output-document=-
-          https://127.0.0.1:8443/health/ready
+        run: |
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.ci.yml \
+            exec -T nginx \
+            sh -ec 'wget --no-check-certificate --quiet --output-document=- \
+              --header="Host: ${NGINX_SERVER_NAME}" \
+              https://127.0.0.1:8443/nginx-health'
 
       - name: Stop application stack
         if: always()

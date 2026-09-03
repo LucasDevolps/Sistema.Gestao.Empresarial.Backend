@@ -45,6 +45,18 @@ public sealed class NginxConfigurationTests
         Assert.Contains("--aclfile /tmp/users.acl", compose, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void Ci_DeveTestarProxyComHostPermitidoSemExporHealthChecksDaAplicacao()
+    {
+        var root = FindRepositoryRoot();
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "ci.yml"));
+
+        Assert.Contains("--header=\"Host: ${NGINX_SERVER_NAME}\"", workflow, StringComparison.Ordinal);
+        Assert.Contains("https://127.0.0.1:8443/nginx-health", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://127.0.0.1:8443/health/live", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://127.0.0.1:8443/health/ready", workflow, StringComparison.Ordinal);
+    }
+
     private static string Between(string value, string start, string end)
     {
         var startIndex = value.IndexOf(start, StringComparison.Ordinal);
