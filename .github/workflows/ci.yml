@@ -124,7 +124,7 @@ jobs:
       - name: Apply migrations to application database
         shell: bash
         run: |
-          ConnectionStrings__SqlServer="Server=localhost,1433;Database=SistemaGestaoEmpresarial;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True" \
+          SGE_DESIGNTIME_SQLSERVER="Server=localhost,1433;Database=SistemaGestaoEmpresarial;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True" \
           dotnet tool run dotnet-ef database update \
             --project src/Sistema.Gestao.Empresarial.Infrastructure \
             --startup-project src/Sistema.Gestao.Empresarial.Infrastructure \
