@@ -14,3 +14,11 @@ services:
   rabbitmq:
     ports:
       - "127.0.0.1:5672:5672"
+
+# A rede padrão permanece interna no Compose base. No CI, os testes são
+# executados no host do runner e precisam alcançar somente as portas publicadas
+# em loopback acima; sem a saída da rede, o NAT do Docker não encaminha essas
+# conexões para os containers.
+networks:
+  default:
+    internal: false
