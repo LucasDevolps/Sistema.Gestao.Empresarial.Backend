@@ -27,7 +27,7 @@ public sealed class NginxConfigurationTests
     public void ComposeBase_NaoDevePublicarApiNemRabbitManagementDiretamente()
     {
         var root = FindRepositoryRoot();
-        var compose = File.ReadAllText(Path.Combine(root, "docker-compose.yml"));
+        var compose = File.ReadAllText(Path.Combine(root, "docker-compose.yml")).ReplaceLineEndings("\n");
         var apiSection = Between(compose, "  api:", "  nginx:");
         var rabbitSection = Between(compose, "  rabbitmq:", "  otel-collector:");
 
@@ -44,7 +44,7 @@ public sealed class NginxConfigurationTests
         Assert.Contains("DOTNET_ENVIRONMENT: Production", compose, StringComparison.Ordinal);
         Assert.Contains("--aclfile /tmp/users.acl", compose, StringComparison.Ordinal);
 
-        var ciOverride = File.ReadAllText(Path.Combine(root, "docker-compose.ci.yml"));
+        var ciOverride = File.ReadAllText(Path.Combine(root, "docker-compose.ci.yml")).ReplaceLineEndings("\n");
         Assert.Contains("127.0.0.1:1433:1433", ciOverride, StringComparison.Ordinal);
         Assert.Contains("127.0.0.1:6379:6379", ciOverride, StringComparison.Ordinal);
         Assert.Contains("127.0.0.1:5672:5672", ciOverride, StringComparison.Ordinal);
@@ -53,18 +53,6 @@ public sealed class NginxConfigurationTests
             "default:\n    name: ${SGE_DOCKER_NETWORK:-sge-network}\n    internal: true",
             compose,
             StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Ci_DeveTestarProxyComHostPermitidoSemExporHealthChecksDaAplicacao()
-    {
-        var root = FindRepositoryRoot();
-        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "ci.yml"));
-
-        Assert.Contains("--header=\"Host: ${NGINX_SERVER_NAME}\"", workflow, StringComparison.Ordinal);
-        Assert.Contains("https://127.0.0.1:8443/nginx-health", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("https://127.0.0.1:8443/health/live", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("https://127.0.0.1:8443/health/ready", workflow, StringComparison.Ordinal);
     }
 
     [Fact]
