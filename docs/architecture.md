@@ -44,7 +44,9 @@ Worker. Domain não referencia EF Core, Redis, RabbitMQ ou ASP.NET Core.
 ## 3. Arquitetura de execução e containers
 
 ```text
-                    reverse proxy / ingress
+                    cliente HTTPS
+                             |
+                  Nginx / rate limiting
                              |
                  +-----------+-----------+
                  |                       |
@@ -64,8 +66,9 @@ Worker. Domain não referencia EF Core, Redis, RabbitMQ ou ASP.NET Core.
 
 API e Worker serão imagens multi-stage, executadas como usuário não root, sem
 `container_name`, sem estado necessário em memória local e com graceful shutdown.
-O Compose local terá SQL Server, Redis persistente (AOF), RabbitMQ com management,
-Collector OTLP, named volumes, health checks e dependências condicionadas à saúde.
+O Compose local possui Nginx com TLS na borda, SQL Server, Redis persistente (AOF),
+RabbitMQ com management somente no override de desenvolvimento, Collector OTLP,
+named volumes, health checks e dependências condicionadas à saúde.
 Liveness mede o processo; readiness mede SQL, Redis e RabbitMQ conforme a função do
 serviço. Migrations serão uma etapa controlada, nunca executadas concorrentemente
 por todas as réplicas em produção.
@@ -371,3 +374,13 @@ campo estrutural `Ordem`. As mutações são idempotentes, protegidas por permis
 configuráveis e persistem auditoria e Outbox na mesma transação. A inativação é
 rejeitada enquanto houver funcionário ativo usando o registro, preservando a
 consistência operacional sem apagar o histórico.
+
+A décima primeira fatia adiciona defesa HTTP em profundidade. Nginx é a única porta
+pública da API, termina TLS, sobrescreve forwarded headers, limita conexões, taxa e
+body e adiciona headers de segurança. Uma rede interna dedicada liga somente Nginx
+e API; o endereço estático do proxy é a única origem autorizada pelo
+`ForwardedHeadersMiddleware`, com `ForwardLimit = 1`. Depois dessa validação,
+`RemoteIpAddress` contém o IP do cliente usado por auditoria, autenticação e rate
+limiting. Kestrel também aplica limite de 1 MiB, timeouts e taxa mínima, enquanto uma
+política ASP.NET global e outra mais restritiva protegem login e refresh. HSTS é
+aplicado no proxy e pela API fora de desenvolvimento.

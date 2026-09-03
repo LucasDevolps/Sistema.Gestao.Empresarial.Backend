@@ -1,7 +1,8 @@
 services:
-  api:
+  nginx:
     ports:
-      - "${SGE_API_PORT:-8080}:8080"
+      - "${SGE_HTTP_PORT:-8080}:8080"
+      - "8443:8443"
 
   sqlserver:
     ports:
@@ -10,6 +11,10 @@ services:
   redis:
     ports:
       - "${SGE_REDIS_PORT:-6379}:6379"
+
+  rabbitmq:
+    ports:
+      - "${SGE_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
 
   otel-collector:
     ports:
