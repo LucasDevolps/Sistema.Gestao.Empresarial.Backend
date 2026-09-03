@@ -13,6 +13,21 @@ public static class PermissionCodes
     public const string EditPositions = "CARGO_EDITAR";
     public const string ViewProfessionalLevels = "NIVEL_PROFISSIONAL_VISUALIZAR";
     public const string ManageUserPermissions = "USUARIO_GERENCIAR_PERMISSOES";
+
+    public static IReadOnlyCollection<string> All { get; } =
+    [
+        ViewEmployees,
+        CreateEmployees,
+        EditEmployees,
+        ViewProfessions,
+        CreateProfessions,
+        EditProfessions,
+        ViewPositions,
+        CreatePositions,
+        EditPositions,
+        ViewProfessionalLevels,
+        ManageUserPermissions
+    ];
 }
 
 public interface IPermissionChecker
