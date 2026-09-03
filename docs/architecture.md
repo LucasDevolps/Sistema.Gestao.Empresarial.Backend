@@ -316,7 +316,7 @@ padrão. A primeira implementação abaixo limita-se à fundação do item 1 e a
 do item 2; autenticação e mensageria não serão simuladas parcialmente de forma
 insegura.
 
-## 19. Estado após a sétima fatia
+## 19. Estado após a décima segunda fatia
 
 Foram implementados o modelo de usuário/perfil/permissão, sessão durável, índice
 único filtrado de sessão ativa, lock transacional de login no SQL Server, JWT,
@@ -384,3 +384,11 @@ e API; o endereço estático do proxy é a única origem autorizada pelo
 limiting. Kestrel também aplica limite de 1 MiB, timeouts e taxa mínima, enquanto uma
 política ASP.NET global e outra mais restritiva protegem login e refresh. HSTS é
 aplicado no proxy e pela API fora de desenvolvimento.
+
+A décima segunda fatia fecha o ciclo de instalação com um bootstrap administrativo
+one-shot executado fora da API. O comando exige configuração explícita, catálogo
+completo criado pelas migrations e senha forte lida de arquivo; ele recusa execução quando qualquer
+usuário, até mesmo soft-deleted, já existe. No SQL Server, uma transação serializável
+e `sp_getapplock` impedem dois provisionamentos concorrentes. Organização, unidade,
+catálogos mínimos, funcionário, usuário, perfil integral, auditoria e Outbox são
+persistidos atomicamente; senha e hash nunca entram nos eventos ou logs de domínio.

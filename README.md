@@ -102,9 +102,32 @@ hashes dos tokens são persistidos. A validade real depende da sessão SQL + Red
 um JWT assinado não é suficiente. O logout exige uma sessão ativa e revoga todas as
 sessões inconsistentes ainda marcadas como ativas.
 
-Nenhum usuário ou segredo administrativo é criado automaticamente pela migration.
-O provisionamento inicial será implementado como fluxo administrativo controlado;
-não existem credenciais padrão no código ou no banco.
+Nenhum usuário ou segredo administrativo é criado automaticamente pela migration e
+não existem credenciais padrão no código ou no banco. O primeiro administrador é
+provisionado por um comando one-shot separado, descrito abaixo.
+
+## Bootstrap administrativo inicial
+
+Depois das migrations e antes de disponibilizar a API, configure no `.env` os
+campos `SGE_BOOTSTRAP_*`. Grave uma senha exclusiva de pelo menos 16 caracteres em
+um arquivo fora do repositório e informe seu caminho WSL em
+`SGE_BOOTSTRAP_PASSWORD_FILE`. A senha deve conter maiúscula, minúscula, número e
+caractere especial. Em seguida execute:
+
+```powershell
+wsl bash ./scripts/bootstrap-initial-admin-docker.sh
+```
+
+O job usa o login SQL de runtime, monta a senha como arquivo read-only e cria, na
+mesma transação, organização, unidade hospitalar, profissão, cargo, funcionário,
+usuário e o perfil `ADMINISTRADOR_INICIAL` com todas as permissões ativas do
+catálogo. A execução grava `AuditLog` e Outbox sem incluir a senha ou seu hash.
+
+O banco adquire lock exclusivo durante a operação. Se qualquer usuário — inclusive
+soft-deleted — já existir, o comando termina sem alterar dados e retorna código 3.
+Por isso, ele não é um mecanismo de recuperação nem de criação de administradores
+adicionais. Remova o arquivo da senha após a execução e use o fluxo administrativo
+autenticado para operações posteriores.
 
 ## Autorização configurável
 
