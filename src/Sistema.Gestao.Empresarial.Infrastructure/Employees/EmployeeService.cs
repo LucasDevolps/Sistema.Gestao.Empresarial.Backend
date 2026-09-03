@@ -19,9 +19,12 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
 
     public async Task<EmployeePageResponse> ListAsync(
         EmployeeListQuery query,
+        EmployeeOperationContext context,
         CancellationToken cancellationToken)
     {
-        var employees = dbContext.Funcionarios.AsNoTracking();
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
+        var employees = dbContext.Funcionarios.AsNoTracking()
+            .Where(x => x.UnidadeContratacao.OrganizacaoId == organizationId);
         var search = query.Search?.Trim();
         if (!string.IsNullOrWhiteSpace(search))
         {
@@ -64,20 +67,28 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         return new EmployeePageResponse(items, query.Page, query.PageSize, total);
     }
 
-    public Task<EmployeeResponse?> GetAsync(Guid employeeGuid, CancellationToken cancellationToken) =>
-        BuildResponseAsync(employeeGuid, cancellationToken);
+    public async Task<EmployeeResponse?> GetAsync(
+        Guid employeeGuid,
+        EmployeeOperationContext context,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
+        return await BuildResponseAsync(employeeGuid, organizationId, cancellationToken);
+    }
 
     public async Task<EmployeeResponse> CreateAsync(
         CreateEmployeeRequest request,
         EmployeeOperationContext context,
         CancellationToken cancellationToken)
     {
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
         var employeeGuid = await ExecuteMutationAsync(async () =>
         {
             await EnsureEmailIsAvailableAsync(request.Email, null, cancellationToken);
             var references = await ResolveProfessionalReferencesAsync(
                 request.ProfessionGuid, request.PositionGuid, request.LevelGuid, cancellationToken);
             var hiringUnit = await ResolveUnitAsync(request.HiringUnitGuid, cancellationToken);
+            EnsureSameOrganization(organizationId, hiringUnit.OrganizationId);
             var actingUnits = await ResolveActingUnitsAsync(
                 request.ActingUnits ?? [], hiringUnit.OrganizationId, cancellationToken);
             var sectors = await ResolveSectorsAsync(
@@ -128,7 +139,7 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             return employee.Guid;
         }, cancellationToken);
 
-        return await GetRequiredAsync(employeeGuid, cancellationToken);
+        return await GetRequiredAsync(employeeGuid, organizationId, cancellationToken);
     }
 
     public async Task<EmployeeResponse?> UpdateAsync(
@@ -137,13 +148,16 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         EmployeeOperationContext context,
         CancellationToken cancellationToken)
     {
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
         var found = await ExecuteMutationAsync(async () =>
         {
             var employee = await dbContext.Funcionarios
                 .Include(x => x.Profissao)
                 .Include(x => x.Cargo)
                 .Include(x => x.Nivel)
-                .SingleOrDefaultAsync(x => x.Guid == employeeGuid, cancellationToken);
+                .SingleOrDefaultAsync(x =>
+                    x.Guid == employeeGuid && x.UnidadeContratacao.OrganizacaoId == organizationId,
+                    cancellationToken);
             if (employee is null)
             {
                 return false;
@@ -182,7 +196,7 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             return true;
         }, cancellationToken);
 
-        return found ? await BuildResponseAsync(employeeGuid, cancellationToken) : null;
+        return found ? await BuildResponseAsync(employeeGuid, organizationId, cancellationToken) : null;
     }
 
     public async Task<EmployeeResponse?> ChangeStatusAsync(
@@ -191,10 +205,13 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         EmployeeOperationContext context,
         CancellationToken cancellationToken)
     {
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
         var found = await ExecuteMutationAsync(async () =>
         {
             var employee = await dbContext.Funcionarios
-                .SingleOrDefaultAsync(x => x.Guid == employeeGuid, cancellationToken);
+                .SingleOrDefaultAsync(x =>
+                    x.Guid == employeeGuid && x.UnidadeContratacao.OrganizacaoId == organizationId,
+                    cancellationToken);
             if (employee is null)
             {
                 return false;
@@ -223,7 +240,7 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             return true;
         }, cancellationToken);
 
-        return found ? await BuildResponseAsync(employeeGuid, cancellationToken) : null;
+        return found ? await BuildResponseAsync(employeeGuid, organizationId, cancellationToken) : null;
     }
 
     public async Task<EmployeeActingUnitResponse?> AddActingUnitAsync(
@@ -232,11 +249,14 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         EmployeeOperationContext context,
         CancellationToken cancellationToken)
     {
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
         var relationshipGuid = await ExecuteMutationAsync(async () =>
         {
             var employee = await dbContext.Funcionarios
                 .Include(x => x.UnidadeContratacao)
-                .SingleOrDefaultAsync(x => x.Guid == employeeGuid, cancellationToken);
+                .SingleOrDefaultAsync(x =>
+                    x.Guid == employeeGuid && x.UnidadeContratacao.OrganizacaoId == organizationId,
+                    cancellationToken);
             if (employee is null)
             {
                 return (Guid?)null;
@@ -289,13 +309,15 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         DateOnly endDate,
         EmployeeOperationContext context,
         CancellationToken cancellationToken) =>
-        ExecuteMutationAsync(async () =>
+        ExecuteTenantMutationAsync(context.ActorUserGuid, async organizationId =>
         {
             var relationship = await dbContext.FuncionariosUnidadesAtuacao
                 .Include(x => x.Funcionario)
                 .Include(x => x.UnidadeHospitalar)
                 .SingleOrDefaultAsync(x =>
-                    x.Guid == relationshipGuid && x.Funcionario.Guid == employeeGuid,
+                    x.Guid == relationshipGuid
+                    && x.Funcionario.Guid == employeeGuid
+                    && x.Funcionario.UnidadeContratacao.OrganizacaoId == organizationId,
                     cancellationToken);
             if (relationship is null)
             {
@@ -336,11 +358,14 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         EmployeeOperationContext context,
         CancellationToken cancellationToken)
     {
+        var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
         var relationshipGuid = await ExecuteMutationAsync(async () =>
         {
             var employee = await dbContext.Funcionarios
                 .Include(x => x.UnidadeContratacao)
-                .SingleOrDefaultAsync(x => x.Guid == employeeGuid, cancellationToken);
+                .SingleOrDefaultAsync(x =>
+                    x.Guid == employeeGuid && x.UnidadeContratacao.OrganizacaoId == organizationId,
+                    cancellationToken);
             if (employee is null)
             {
                 return (Guid?)null;
@@ -404,13 +429,15 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         DateOnly endDate,
         EmployeeOperationContext context,
         CancellationToken cancellationToken) =>
-        ExecuteMutationAsync(async () =>
+        ExecuteTenantMutationAsync(context.ActorUserGuid, async organizationId =>
         {
             var relationship = await dbContext.FuncionariosSetores
                 .Include(x => x.Funcionario)
                 .Include(x => x.Setor)
                 .SingleOrDefaultAsync(x =>
-                    x.Guid == relationshipGuid && x.Funcionario.Guid == employeeGuid,
+                    x.Guid == relationshipGuid
+                    && x.Funcionario.Guid == employeeGuid
+                    && x.Funcionario.UnidadeContratacao.OrganizacaoId == organizationId,
                     cancellationToken);
             if (relationship is null)
             {
@@ -435,10 +462,13 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             return true;
         }, cancellationToken);
 
-    private async Task<EmployeeResponse?> BuildResponseAsync(Guid employeeGuid, CancellationToken cancellationToken)
+    private async Task<EmployeeResponse?> BuildResponseAsync(
+        Guid employeeGuid,
+        long organizationId,
+        CancellationToken cancellationToken)
     {
         var employee = await dbContext.Funcionarios.AsNoTracking()
-            .Where(x => x.Guid == employeeGuid)
+            .Where(x => x.Guid == employeeGuid && x.UnidadeContratacao.OrganizacaoId == organizationId)
             .Select(x => new
             {
                 x.Id,
@@ -487,8 +517,11 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             employee.DataCriacao, employee.DataAtualizacao);
     }
 
-    private async Task<EmployeeResponse> GetRequiredAsync(Guid employeeGuid, CancellationToken cancellationToken) =>
-        await BuildResponseAsync(employeeGuid, cancellationToken)
+    private async Task<EmployeeResponse> GetRequiredAsync(
+        Guid employeeGuid,
+        long organizationId,
+        CancellationToken cancellationToken) =>
+        await BuildResponseAsync(employeeGuid, organizationId, cancellationToken)
         ?? throw new InvalidOperationException("O funcionário persistido não pôde ser recuperado.");
 
     private async Task<EmployeeActingUnitResponse> GetActingUnitAsync(Guid relationshipGuid, CancellationToken cancellationToken) =>
@@ -720,6 +753,22 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         }
     }
 
+    private async Task<T> ExecuteTenantMutationAsync<T>(
+        Guid actorUserGuid,
+        Func<long, Task<T>> mutation,
+        CancellationToken cancellationToken)
+    {
+        var organizationId = await GetActorOrganizationIdAsync(actorUserGuid, cancellationToken);
+        return await ExecuteMutationAsync(() => mutation(organizationId), cancellationToken);
+    }
+
+    private async Task<long> GetActorOrganizationIdAsync(Guid actorUserGuid, CancellationToken cancellationToken) =>
+        await dbContext.Usuarios.AsNoTracking()
+            .Where(x => x.Guid == actorUserGuid && x.Ativo && x.FuncionarioId.HasValue && x.Funcionario!.Ativo)
+            .Select(x => (long?)x.Funcionario!.UnidadeContratacao.OrganizacaoId)
+            .SingleOrDefaultAsync(cancellationToken)
+        ?? throw new OrganizationAccessDeniedException();
+
     private async Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken) =>
         dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
@@ -735,3 +784,6 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
 
 public sealed class EmployeePersistenceConflictException(string message, Exception innerException)
     : Exception(message, innerException);
+
+public sealed class OrganizationAccessDeniedException()
+    : Exception("O usuário não possui um escopo organizacional ativo.");

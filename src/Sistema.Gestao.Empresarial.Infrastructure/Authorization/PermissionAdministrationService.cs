@@ -24,10 +24,22 @@ public sealed class PermissionAdministrationService(
     private const string Producer = "Sistema.Gestao.Empresarial.Api";
     private static readonly ConcurrentDictionary<long, SemaphoreSlim> InProcessLocks = new();
 
-    public async Task<UserPermissionsResponse?> GetAsync(Guid userGuid, CancellationToken cancellationToken)
+    public async Task<UserPermissionsResponse?> GetAsync(
+        Guid actorUserGuid,
+        Guid userGuid,
+        CancellationToken cancellationToken)
     {
+        var actorOrganizationId = await GetOrganizationIdAsync(actorUserGuid, cancellationToken);
+        if (!actorOrganizationId.HasValue)
+        {
+            return null;
+        }
+
         var user = await dbContext.Usuarios.AsNoTracking()
-            .Where(x => x.Guid == userGuid && x.Ativo)
+            .Where(x => x.Guid == userGuid
+                && x.Ativo
+                && x.FuncionarioId.HasValue
+                && x.Funcionario!.UnidadeContratacao.OrganizacaoId == actorOrganizationId.Value)
             .Select(x => new { x.Guid, x.VersaoPermissoes })
             .SingleOrDefaultAsync(cancellationToken);
         if (user is null)
@@ -67,7 +79,14 @@ public sealed class PermissionAdministrationService(
 
             var identities = await dbContext.Usuarios.AsNoTracking()
                 .Where(x => x.Guid == actorUserGuid || x.Guid == targetUserGuid)
-                .Select(x => new { x.Id, x.Guid })
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Guid,
+                    OrganizationId = x.FuncionarioId.HasValue
+                        ? (long?)x.Funcionario!.UnidadeContratacao.OrganizacaoId
+                        : null
+                })
                 .ToListAsync(cancellationToken);
             var actorIdentity = identities.SingleOrDefault(x => x.Guid == actorUserGuid);
             var targetIdentity = identities.SingleOrDefault(x => x.Guid == targetUserGuid);
@@ -78,6 +97,11 @@ public sealed class PermissionAdministrationService(
             if (targetIdentity is null)
             {
                 return PermissionChangeResult.UserNotFound;
+            }
+            if (!actorIdentity.OrganizationId.HasValue
+                || actorIdentity.OrganizationId != targetIdentity.OrganizationId)
+            {
+                return PermissionChangeResult.Forbidden;
             }
 
             await using var transaction = await BeginTransactionAsync(cancellationToken);
@@ -148,6 +172,12 @@ public sealed class PermissionAdministrationService(
             return PermissionChangeResult.Changed;
         });
     }
+
+    private Task<long?> GetOrganizationIdAsync(Guid userGuid, CancellationToken cancellationToken) =>
+        dbContext.Usuarios.AsNoTracking()
+            .Where(x => x.Guid == userGuid && x.Ativo && x.FuncionarioId.HasValue)
+            .Select(x => (long?)x.Funcionario!.UnidadeContratacao.OrganizacaoId)
+            .SingleOrDefaultAsync(cancellationToken);
 
     private void AddAuditAndOutbox(
         Guid actorUserGuid,

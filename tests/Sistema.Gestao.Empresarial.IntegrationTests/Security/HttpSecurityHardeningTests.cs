@@ -87,6 +87,8 @@ public sealed class HttpSecurityHardeningTests
         Assert.Equal("DENY", context.Response.Headers["X-Frame-Options"]);
         Assert.Equal("no-referrer", context.Response.Headers["Referrer-Policy"]);
         Assert.Contains("frame-ancestors 'none'", context.Response.Headers["Content-Security-Policy"].ToString());
+        Assert.DoesNotContain("unsafe-inline", context.Response.Headers["Content-Security-Policy"].ToString());
+        Assert.Equal("no-store, private", context.Response.Headers.CacheControl);
     }
 
     private static ForwardedHeadersOptions CreateForwardedHeadersOptions(string knownProxy)

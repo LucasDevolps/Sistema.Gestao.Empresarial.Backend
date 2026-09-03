@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Sistema.Gestao.Empresarial.Application.Employees;
 using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
+using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
@@ -30,6 +31,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
     public ushort RabbitMqPort { get; private set; }
     public string RabbitMqUsername { get; private set; } = string.Empty;
     public string RabbitMqPassword { get; private set; } = string.Empty;
+    public string RabbitMqVirtualHost { get; private set; } = string.Empty;
     public string IsolationKey { get; } = Guid.NewGuid().ToString("N");
     public IConnectionMultiplexer Redis { get; private set; } = null!;
     public IServiceProvider Metrics => _metricsProvider!;
@@ -40,6 +42,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
     public Guid HiringUnitGuid { get; private set; }
     public Guid ActingUnitGuid { get; private set; }
     public Guid SectorGuid { get; private set; }
+    public Guid ActorUserGuid { get; private set; }
 
     public async Task InitializeAsync()
     {
@@ -49,6 +52,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
         RabbitMqPort = ushort.Parse(RequiredEnvironment("SGE_TEST_RABBITMQ_PORT"));
         RabbitMqUsername = RequiredEnvironment("SGE_TEST_RABBITMQ_USERNAME");
         RabbitMqPassword = RequiredEnvironment("SGE_TEST_RABBITMQ_PASSWORD");
+        RabbitMqVirtualHost = RequiredEnvironment("SGE_TEST_RABBITMQ_VIRTUAL_HOST");
 
         ValidateDatabaseName(DatabaseName);
         var masterBuilder = new SqlConnectionStringBuilder(_masterConnectionString)
@@ -111,7 +115,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
             sectors ?? []);
 
     public EmployeeOperationContext CreateOperationContext(Guid correlationId) =>
-        new(Guid.NewGuid(), correlationId, Guid.NewGuid().ToString("N"), "127.0.0.1");
+        new(ActorUserGuid, correlationId, Guid.NewGuid().ToString("N"), "127.0.0.1");
 
     public async Task DisposeAsync()
     {
@@ -168,6 +172,16 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
         HiringUnitGuid = hiringUnit.Guid;
         ActingUnitGuid = actingUnit.Guid;
         SectorGuid = sector.Guid;
+
+        var actorEmployee = new Funcionario(
+            Guid.NewGuid(), "Gestor de integração", $"gestor-{IsolationKey}@hospital.test", null,
+            profession.Id, position.Id, 3, hiringUnit.Id, new DateOnly(2025, 1, 1), now);
+        db.Funcionarios.Add(actorEmployee);
+        await db.SaveChangesAsync();
+        var actor = new Usuario(Guid.NewGuid(), actorEmployee.Id, actorEmployee.Email, "HASH_DE_TESTE", now);
+        db.Usuarios.Add(actor);
+        await db.SaveChangesAsync();
+        ActorUserGuid = actor.Guid;
     }
 
     private static string RequiredEnvironment(string name) =>

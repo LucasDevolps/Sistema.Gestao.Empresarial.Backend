@@ -6,27 +6,31 @@ services:
       context: .
       dockerfile: src/Sistema.Gestao.Empresarial.Api/Dockerfile
     environment: &application-environment
-      DOTNET_ENVIRONMENT: Development
-      ConnectionStrings__SqlServer: Server=sqlserver,1433;Database=SistemaGestaoEmpresarial;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD:?Defina SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True
-      Redis__Configuration: redis:6379,abortConnect=false
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__SqlServer: Server=sqlserver,1433;Database=SistemaGestaoEmpresarial;User Id=${SGE_SQLSERVER_APP_USERNAME:?Defina SGE_SQLSERVER_APP_USERNAME};Password=${SGE_SQLSERVER_APP_PASSWORD:?Defina SGE_SQLSERVER_APP_PASSWORD};Encrypt=True;TrustServerCertificate=True
+      Redis__Configuration: redis:6379,user=${SGE_REDIS_USERNAME:?Defina SGE_REDIS_USERNAME},password=${SGE_REDIS_PASSWORD:?Defina SGE_REDIS_PASSWORD},abortConnect=false
       Redis__InstanceName: sge
       RabbitMq__Host: rabbitmq
       RabbitMq__Port: 5672
-      RabbitMq__VirtualHost: /
+      RabbitMq__VirtualHost: /sge
       RabbitMq__Username: ${SGE_RABBITMQ_USERNAME:?Defina SGE_RABBITMQ_USERNAME}
       RabbitMq__Password: ${SGE_RABBITMQ_PASSWORD:?Defina SGE_RABBITMQ_PASSWORD}
       OpenTelemetry__Enabled: "true"
       OpenTelemetry__OtlpEndpoint: http://otel-collector:4317
+      OpenTelemetry__SamplingRatio: ${SGE_OTEL_SAMPLING_RATIO:-0.1}
       Jwt__SigningKey: ${SGE_JWT_SIGNING_KEY:?Defina SGE_JWT_SIGNING_KEY}
       ASPNETCORE_URLS: http://+:8080
       ReverseProxy__Enabled: "true"
       ReverseProxy__ForwardLimit: 1
-      ReverseProxy__KnownProxies__0: 172.30.0.2
+      ReverseProxy__KnownProxies__0: ${SGE_NGINX_INTERNAL_IP:-172.30.0.2}
+      AllowedHosts: ${SGE_NGINX_SERVER_NAME:-localhost}
     expose:
       - "8080"
     depends_on:
       sqlserver:
         condition: service_healthy
+      sqlserver-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       rabbitmq:
@@ -40,16 +44,26 @@ services:
       retries: 5
       start_period: 15s
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1.5
     networks:
       default:
       api-proxy:
-        ipv4_address: 172.30.0.3
+        ipv4_address: ${SGE_API_INTERNAL_IP:-172.30.0.3}
 
   nginx:
     build:
       context: ./deploy/nginx
     environment:
-      NGINX_GENERATE_SELF_SIGNED_CERTIFICATE: ${SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE:-true}
+      NGINX_GENERATE_SELF_SIGNED_CERTIFICATE: ${SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE:-false}
       NGINX_SERVER_NAME: ${SGE_NGINX_SERVER_NAME:-localhost}
     expose:
       - "8080"
@@ -60,7 +74,7 @@ services:
       api:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-check-certificate", "--spider", "--quiet", "https://127.0.0.1:8443/nginx-health"]
+      test: ["CMD-SHELL", "wget --no-check-certificate --header=\"Host: $$NGINX_SERVER_NAME\" --spider --quiet https://127.0.0.1:8443/nginx-health"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -75,9 +89,16 @@ services:
       - SETGID
       - SETUID
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid,nodev
+      - /var/cache/nginx:size=32m,noexec,nosuid,nodev
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 1.0
     networks:
       api-proxy:
-        ipv4_address: 172.30.0.2
+        ipv4_address: ${SGE_NGINX_INTERNAL_IP:-172.30.0.2}
       edge:
 
   worker:
@@ -92,6 +113,8 @@ services:
     depends_on:
       sqlserver:
         condition: service_healthy
+      sqlserver-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       rabbitmq:
@@ -105,9 +128,19 @@ services:
       retries: 5
       start_period: 15s
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1.5
 
   sqlserver:
-    image: mcr.microsoft.com/mssql/server:2022-latest
+    image: mcr.microsoft.com/mssql/server:2022-latest@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
     environment:
       ACCEPT_EULA: "Y"
       MSSQL_PID: Developer
@@ -121,24 +154,64 @@ services:
       retries: 15
       start_period: 30s
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: 2g
+    cpus: 2.0
+
+  sqlserver-init:
+    image: mcr.microsoft.com/mssql/server:2022-latest@sha256:ba4c8329f48fb8f02e1416be6a930ebfd71268caee78aa985f3af4315e457c89
+    environment:
+      SGE_SQLSERVER_SA_PASSWORD: ${SGE_SQLSERVER_SA_PASSWORD:?Defina SGE_SQLSERVER_SA_PASSWORD}
+      SGE_SQLSERVER_APP_USERNAME: ${SGE_SQLSERVER_APP_USERNAME:?Defina SGE_SQLSERVER_APP_USERNAME}
+      SGE_SQLSERVER_APP_PASSWORD: ${SGE_SQLSERVER_APP_PASSWORD:?Defina SGE_SQLSERVER_APP_PASSWORD}
+    volumes:
+      - ./deploy/sqlserver/initialize-app-login.sh:/usr/local/bin/initialize-app-login.sh:ro
+    entrypoint: ["/bin/bash", "/usr/local/bin/initialize-app-login.sh"]
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
 
   redis:
-    image: redis:8.2.1-alpine
-    command: ["redis-server", "--appendonly", "yes"]
+    image: redis:8.2.1-alpine@sha256:987c376c727652f99625c7d205a1cba3cb2c53b92b0b62aade2bd48ee1593232
+    environment:
+      REDIS_USERNAME: ${SGE_REDIS_USERNAME:?Defina SGE_REDIS_USERNAME}
+      REDIS_PASSWORD: ${SGE_REDIS_PASSWORD:?Defina SGE_REDIS_PASSWORD}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        case "$${REDIS_USERNAME}" in *[!A-Za-z0-9_-]*|'') exit 64;; esac
+        password_hash="$$(printf '%s' "$${REDIS_PASSWORD}" | sha256sum | cut -d' ' -f1)"
+        printf 'user default off\nuser %s on #%s ~sge* +@read +@write +@scripting +ping +client +info +echo +command\n' "$${REDIS_USERNAME}" "$${password_hash}" > /tmp/users.acl
+        exec redis-server --appendonly yes --aclfile /tmp/users.acl
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --user \"$$REDIS_USERNAME\" --pass \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 5s
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
 
   rabbitmq:
-    image: rabbitmq:4.3.5-management-alpine
+    image: rabbitmq:4.3.5-management-alpine@sha256:5b6a50b2f1dbd987bb1a6a9e20b152910c3dc8ae32e1c9060b543ecd9250f6b9
     environment:
       RABBITMQ_DEFAULT_USER: ${SGE_RABBITMQ_USERNAME:?Defina SGE_RABBITMQ_USERNAME}
       RABBITMQ_DEFAULT_PASS: ${SGE_RABBITMQ_PASSWORD:?Defina SGE_RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: /sge
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
@@ -148,9 +221,14 @@ services:
       retries: 10
       start_period: 20s
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 768m
+    cpus: 1.5
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.153.0
+    image: otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ./deploy/otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
@@ -163,18 +241,29 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
 
 networks:
   default:
-    name: sge-network
+    name: ${SGE_DOCKER_NETWORK:-sge-network}
+    internal: true
   api-proxy:
-    name: sge-api-proxy
+    name: ${SGE_API_PROXY_NETWORK:-sge-api-proxy}
     internal: true
     ipam:
       config:
-        - subnet: 172.30.0.0/29
+        - subnet: ${SGE_API_PROXY_SUBNET:-172.30.0.0/29}
   edge:
-    name: sge-edge
+    name: ${SGE_EDGE_NETWORK:-sge-edge}
 
 volumes:
   sql-data:

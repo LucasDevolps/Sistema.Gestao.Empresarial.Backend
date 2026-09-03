@@ -36,6 +36,9 @@ public sealed class SessionOptions
 
     [Range(3, 20)]
     public int MaximumFailedLoginAttempts { get; init; } = 5;
+
+    [Range(1, 1440)]
+    public int LockoutMinutes { get; init; } = 15;
 }
 
 public sealed class RedisOptions
@@ -124,11 +127,11 @@ public sealed class AuditOptions
 {
     public const string SectionName = "Audit";
 
-    [Range(1024, 1048576)]
-    public int MaxBodyBytes { get; init; } = 65536;
-
     [Range(1, 30)]
     public int PersistenceTimeoutSeconds { get; init; } = 5;
+
+    [Range(100, 100000)]
+    public int ChannelCapacity { get; init; } = 5000;
 }
 
 public sealed class OpenTelemetryOptions

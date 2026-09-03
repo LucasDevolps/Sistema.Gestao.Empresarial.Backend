@@ -264,6 +264,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         ConfigurarBase(builder);
         builder.Property(x => x.Email).HasMaxLength(254).IsRequired();
         builder.Property(x => x.SenhaHash).HasMaxLength(1000).IsRequired();
+        builder.Property(x => x.BloqueadoAte).HasPrecision(0);
         builder.HasIndex(x => x.Email).IsUnique().HasFilter("[Excluido] = 0");
         builder.HasIndex(x => x.FuncionarioId).IsUnique().HasFilter("[FuncionarioId] IS NOT NULL AND [Excluido] = 0");
         builder.HasOne(x => x.Funcionario).WithMany().HasForeignKey(x => x.FuncionarioId);

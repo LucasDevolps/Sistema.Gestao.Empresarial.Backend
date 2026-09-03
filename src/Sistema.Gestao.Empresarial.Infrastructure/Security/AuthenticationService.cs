@@ -59,11 +59,16 @@ public sealed class AuthenticationService(
 
             var user = await dbContext.Usuarios.SingleAsync(x => x.Id == initialUser.Id, cancellationToken);
             var passwordValid = initiallyValid && credentialHasher.VerifyHashedPassword(user.SenhaHash, request.Password);
-            if (!passwordValid || !user.Ativo || user.Bloqueado)
+            var now = timeProvider.GetUtcNow();
+            var temporarilyLocked = user.EstaTemporariamenteBloqueado(now);
+            if (!passwordValid || !user.Ativo || temporarilyLocked)
             {
-                if (!user.Bloqueado)
+                if (!temporarilyLocked)
                 {
-                    user.RegistrarLoginInvalido(timeProvider.GetUtcNow(), _sessionOptions.MaximumFailedLoginAttempts);
+                    user.RegistrarLoginInvalido(
+                        now,
+                        _sessionOptions.MaximumFailedLoginAttempts,
+                        TimeSpan.FromMinutes(_sessionOptions.LockoutMinutes));
                 }
 
                 AddAuditAndOutbox("LoginFalhou", user.Guid, context, new { userGuid = user.Guid });
@@ -73,7 +78,6 @@ public sealed class AuthenticationService(
                 return null;
             }
 
-            var now = timeProvider.GetUtcNow();
             var previousSessions = await dbContext.UsuariosSessoes
                 .Where(x => x.UsuarioId == user.Id && x.Ativo && !x.Revogado)
                 .ToListAsync(cancellationToken);
@@ -301,7 +305,7 @@ public sealed class AuthenticationService(
         return session.Ativo
             && !session.Revogado
             && user.Ativo
-            && !user.Bloqueado
+            && !user.EstaTemporariamenteBloqueado(now)
             && session.VersaoSessao == user.VersaoSessao
             && session.ExpiraEm > now
             && now - session.UltimaAtividadeEm < TimeSpan.FromMinutes(_sessionOptions.InactivityTimeoutMinutes)

@@ -14,6 +14,9 @@ public sealed class EmployeeListQueryValidator : AbstractValidator<EmployeeListQ
 
 public sealed class CreateEmployeeRequestValidator : AbstractValidator<CreateEmployeeRequest>
 {
+    public const int MaximumActingUnits = 50;
+    public const int MaximumSectors = 50;
+
     public CreateEmployeeRequestValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
@@ -26,6 +29,12 @@ public sealed class CreateEmployeeRequestValidator : AbstractValidator<CreateEmp
         RuleFor(x => x.AdmissionDate).NotEqual(default(DateOnly));
         RuleForEach(x => x.ActingUnits).SetValidator(new CreateEmployeeActingUnitRequestValidator());
         RuleForEach(x => x.Sectors).SetValidator(new CreateEmployeeSectorRequestValidator());
+        RuleFor(x => x.ActingUnits)
+            .Must(items => items is null || items.Count <= MaximumActingUnits)
+            .WithMessage($"Informe no máximo {MaximumActingUnits} unidades de atuação.");
+        RuleFor(x => x.Sectors)
+            .Must(items => items is null || items.Count <= MaximumSectors)
+            .WithMessage($"Informe no máximo {MaximumSectors} setores.");
         RuleFor(x => x.ActingUnits)
             .Must(HaveDistinctActingUnits)
             .WithMessage("Uma unidade de atuação não pode ser informada mais de uma vez.");

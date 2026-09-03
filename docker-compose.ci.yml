@@ -1,12 +1,16 @@
 services:
+  nginx:
+    environment:
+      NGINX_GENERATE_SELF_SIGNED_CERTIFICATE: "true"
+
   sqlserver:
     ports:
-      - "1433:1433"
+      - "127.0.0.1:1433:1433"
 
   redis:
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   rabbitmq:
     ports:
-      - "5672:5672"
+      - "127.0.0.1:5672:5672"

@@ -36,7 +36,7 @@ public enum PermissionChangeResult
 
 public interface IPermissionAdministrationService
 {
-    Task<UserPermissionsResponse?> GetAsync(Guid userGuid, CancellationToken cancellationToken);
+    Task<UserPermissionsResponse?> GetAsync(Guid actorUserGuid, Guid userGuid, CancellationToken cancellationToken);
 
     Task<PermissionChangeResult> SetDirectPermissionAsync(
         Guid actorUserGuid,

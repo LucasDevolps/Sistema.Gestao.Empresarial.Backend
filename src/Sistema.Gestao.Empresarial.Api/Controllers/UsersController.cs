@@ -15,7 +15,12 @@ public sealed class UsersController(IPermissionAdministrationService permissions
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetPermissions(Guid userGuid, CancellationToken cancellationToken)
     {
-        var response = await permissions.GetAsync(userGuid, cancellationToken);
+        if (!Guid.TryParse(User.FindFirst("sub")?.Value, out var actorGuid))
+        {
+            return Unauthorized();
+        }
+
+        var response = await permissions.GetAsync(actorGuid, userGuid, cancellationToken);
         return response is null ? NotFound() : Ok(response);
     }
 

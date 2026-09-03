@@ -9,9 +9,11 @@ public sealed class SecurityHeadersMiddleware(RequestDelegate next)
         headers.TryAdd("X-Frame-Options", "DENY");
         headers.TryAdd("Referrer-Policy", "no-referrer");
         headers.TryAdd("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+        headers.TryAdd("Cache-Control", "no-store, private");
+        headers.TryAdd("Pragma", "no-cache");
         headers.TryAdd(
             "Content-Security-Policy",
-            "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+            "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
 
         return next(context);
     }

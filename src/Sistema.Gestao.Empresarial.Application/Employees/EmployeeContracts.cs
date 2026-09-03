@@ -98,8 +98,8 @@ public sealed record EmployeeOperationContext(
 
 public interface IEmployeeService
 {
-    Task<EmployeePageResponse> ListAsync(EmployeeListQuery query, CancellationToken cancellationToken);
-    Task<EmployeeResponse?> GetAsync(Guid employeeGuid, CancellationToken cancellationToken);
+    Task<EmployeePageResponse> ListAsync(EmployeeListQuery query, EmployeeOperationContext context, CancellationToken cancellationToken);
+    Task<EmployeeResponse?> GetAsync(Guid employeeGuid, EmployeeOperationContext context, CancellationToken cancellationToken);
     Task<EmployeeResponse> CreateAsync(CreateEmployeeRequest request, EmployeeOperationContext context, CancellationToken cancellationToken);
     Task<EmployeeResponse?> UpdateAsync(Guid employeeGuid, UpdateEmployeeRequest request, EmployeeOperationContext context, CancellationToken cancellationToken);
     Task<EmployeeResponse?> ChangeStatusAsync(Guid employeeGuid, bool active, EmployeeOperationContext context, CancellationToken cancellationToken);

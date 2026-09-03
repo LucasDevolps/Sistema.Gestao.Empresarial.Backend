@@ -48,7 +48,9 @@ builder.Services.AddControllers();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-builder.Services.AddSingleton<ISensitiveDataRedactor, SensitiveDataRedactor>();
+builder.Services.AddSingleton<ApiAuditSink>();
+builder.Services.AddSingleton<IApiAuditSink>(provider => provider.GetRequiredService<ApiAuditSink>());
+builder.Services.AddHostedService(provider => provider.GetRequiredService<ApiAuditSink>());
 builder.Services.AddHsts(options =>
 {
     options.IncludeSubDomains = true;
@@ -68,7 +70,7 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
         RateLimitPartition.GetFixedWindowLimiter(
-            $"global:{ClientIp(context)}",
+            $"global:{ClientIdentity(context)}",
             _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -214,7 +216,6 @@ app.Use(async (context, next) =>
     context.Response.Headers["X-Correlation-ID"] = correlationId.ToString("D");
     await next(context);
 });
-app.UseMiddleware<ApiRequestAuditMiddleware>();
 app.UseExceptionHandler();
 if (!app.Environment.IsDevelopment())
 {
@@ -228,9 +229,10 @@ if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 
 app.UseHttpsRedirection();
 app.UseRouting();
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
+app.UseMiddleware<ApiRequestAuditMiddleware>();
 app.MapControllers();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
@@ -253,5 +255,10 @@ app.Run();
 
 static string ClientIp(HttpContext context) =>
     context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+static string ClientIdentity(HttpContext context) =>
+    Guid.TryParse(context.User.FindFirst("sub")?.Value, out var userGuid)
+        ? $"user:{userGuid:D}"
+        : $"ip:{ClientIp(context)}";
 
 public partial class Program;

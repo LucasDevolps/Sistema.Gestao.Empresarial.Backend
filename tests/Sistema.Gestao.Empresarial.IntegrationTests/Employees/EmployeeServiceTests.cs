@@ -3,6 +3,7 @@ using Sistema.Gestao.Empresarial.Application.Employees;
 using Sistema.Gestao.Empresarial.Domain.Common;
 using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
+using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 
@@ -44,7 +45,7 @@ public sealed class EmployeeServiceTests
         await Assert.ThrowsAsync<DomainException>(() => fixture.Service.CreateAsync(
             request, fixture.Context(Guid.NewGuid()), CancellationToken.None));
 
-        Assert.Empty(await fixture.Db.Funcionarios.ToListAsync());
+        Assert.Single(await fixture.Db.Funcionarios.ToListAsync());
         Assert.Empty(await fixture.Db.AuditLogs.ToListAsync());
         Assert.Empty(await fixture.Db.OutboxMessages.ToListAsync());
     }
@@ -118,6 +119,35 @@ public sealed class EmployeeServiceTests
         Assert.Single(await fixture.Db.AuditLogs.Where(x => x.Acao == "INATIVADO").ToListAsync());
         Assert.Single(await fixture.Db.OutboxMessages.Where(x => x.EventType == "FuncionarioInativado").ToListAsync());
     }
+
+    [Fact]
+    public async Task ConsultasEMutacoes_DevemOcultarFuncionarioDeOutraOrganizacao()
+    {
+        await using var fixture = await EmployeeFixture.CreateAsync();
+        var external = new Funcionario(
+            Guid.NewGuid(), "Funcionário externo", $"externo-{Guid.NewGuid():N}@hospital.test", null,
+            fixture.Profession.Id, fixture.Position.Id, fixture.Level.Id,
+            fixture.OtherOrganizationUnit.Id, new DateOnly(2026, 1, 1),
+            new DateTimeOffset(2026, 9, 2, 12, 0, 0, TimeSpan.Zero));
+        fixture.Db.Funcionarios.Add(external);
+        await fixture.Db.SaveChangesAsync();
+
+        var context = fixture.Context(Guid.NewGuid());
+        var page = await fixture.Service.ListAsync(
+            new EmployeeListQuery(null, null, null), context, CancellationToken.None);
+        var found = await fixture.Service.GetAsync(external.Guid, context, CancellationToken.None);
+        var updated = await fixture.Service.UpdateAsync(
+            external.Guid,
+            new UpdateEmployeeRequest(
+                external.Nome, external.Email, null,
+                fixture.Profession.Guid, fixture.Position.Guid, fixture.Level.Guid),
+            context,
+            CancellationToken.None);
+
+        Assert.DoesNotContain(page.Items, x => x.Guid == external.Guid);
+        Assert.Null(found);
+        Assert.Null(updated);
+    }
 }
 
 internal sealed class EmployeeFixture : IAsyncDisposable
@@ -137,6 +167,7 @@ internal sealed class EmployeeFixture : IAsyncDisposable
     public Profissao Profession { get; private set; } = null!;
     public Cargo Position { get; private set; } = null!;
     public NivelProfissional Level { get; private set; } = null!;
+    public Guid ActorUserGuid { get; private set; }
 
     public static async Task<EmployeeFixture> CreateAsync()
     {
@@ -167,7 +198,7 @@ internal sealed class EmployeeFixture : IAsyncDisposable
             sectors);
 
     public EmployeeOperationContext Context(Guid correlationId) =>
-        new(Guid.NewGuid(), correlationId, "0123456789abcdef", "127.0.0.1");
+        new(ActorUserGuid, correlationId, "0123456789abcdef", "127.0.0.1");
 
     private async Task SeedAsync(DateTimeOffset now)
     {
@@ -189,6 +220,16 @@ internal sealed class EmployeeFixture : IAsyncDisposable
         Level = new NivelProfissional(Guid.NewGuid(), "SR", "Sênior", 3, now);
         Db.AddRange(SectorA, Profession, Position, Level);
         await Db.SaveChangesAsync();
+
+        var actorEmployee = new Funcionario(
+            Guid.NewGuid(), "Gestor da Rede", "gestor@hospital.test", null,
+            Profession.Id, Position.Id, Level.Id, UnitB.Id, new DateOnly(2025, 1, 1), now);
+        Db.Funcionarios.Add(actorEmployee);
+        await Db.SaveChangesAsync();
+        var actor = new Usuario(Guid.NewGuid(), actorEmployee.Id, actorEmployee.Email, "HASH_DE_TESTE", now);
+        Db.Usuarios.Add(actor);
+        await Db.SaveChangesAsync();
+        ActorUserGuid = actor.Guid;
     }
 
     public ValueTask DisposeAsync() => Db.DisposeAsync();

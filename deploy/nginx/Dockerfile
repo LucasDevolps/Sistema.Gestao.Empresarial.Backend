@@ -1,4 +1,4 @@
-FROM nginx:1.28.0-alpine
+FROM nginx:1.30.4-alpine@sha256:02b1b2a0445514891a14aa371845f6085d5d9d10d385b30d6aad606a50a29a05
 
 RUN apk add --no-cache openssl su-exec \
     && mkdir -p /etc/nginx/certs \

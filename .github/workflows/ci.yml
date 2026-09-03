@@ -22,28 +22,36 @@ jobs:
     env:
       CI: "true"
       SGE_RABBITMQ_USERNAME: sge_ci
+      SGE_SQLSERVER_APP_USERNAME: sge_app_ci
+      SGE_REDIS_USERNAME: sge_cache_ci
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Initialize ephemeral CI credentials
         shell: bash
         run: |
           sql_password="Ci!$(openssl rand -hex 24)aA1"
           rabbit_password="$(openssl rand -hex 24)"
+          app_sql_password="Ci!$(openssl rand -hex 24)aA1"
+          redis_password="$(openssl rand -hex 32)"
           jwt_key="$(openssl rand -hex 32)"
           echo "::add-mask::$sql_password"
           echo "::add-mask::$rabbit_password"
+          echo "::add-mask::$app_sql_password"
+          echo "::add-mask::$redis_password"
           echo "::add-mask::$jwt_key"
           {
             echo "SGE_SQLSERVER_SA_PASSWORD=$sql_password"
             echo "SGE_RABBITMQ_PASSWORD=$rabbit_password"
+            echo "SGE_SQLSERVER_APP_PASSWORD=$app_sql_password"
+            echo "SGE_REDIS_PASSWORD=$redis_password"
             echo "SGE_JWT_SIGNING_KEY=$jwt_key"
           } >> "$GITHUB_ENV"
 
       - name: Setup .NET from global.json
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
           cache: true
@@ -107,11 +115,12 @@ jobs:
         run: |
           SGE_REAL_INFRASTRUCTURE_TESTS=true \
           SGE_TEST_SQLSERVER="Server=localhost,1433;Database=master;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True" \
-          SGE_TEST_REDIS="localhost:6379,abortConnect=false" \
+          SGE_TEST_REDIS="localhost:6379,user=${SGE_REDIS_USERNAME},password=${SGE_REDIS_PASSWORD},abortConnect=false" \
           SGE_TEST_RABBITMQ_HOST="localhost" \
           SGE_TEST_RABBITMQ_PORT="5672" \
           SGE_TEST_RABBITMQ_USERNAME="${SGE_RABBITMQ_USERNAME}" \
           SGE_TEST_RABBITMQ_PASSWORD="${SGE_RABBITMQ_PASSWORD}" \
+          SGE_TEST_RABBITMQ_VIRTUAL_HOST="/sge" \
           dotnet test tests/Sistema.Gestao.Empresarial.IntegrationTests \
             --configuration Release \
             --no-build \
@@ -159,7 +168,7 @@ jobs:
 
       - name: Upload test and migration artifacts
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: backend-ci-artifacts
           if-no-files-found: ignore

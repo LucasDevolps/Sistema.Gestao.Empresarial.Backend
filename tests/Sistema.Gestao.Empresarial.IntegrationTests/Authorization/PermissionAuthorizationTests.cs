@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sistema.Gestao.Empresarial.Application.Authorization;
 using Sistema.Gestao.Empresarial.Domain.Seguranca;
+using Sistema.Gestao.Empresarial.Domain.Organizacoes;
+using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Infrastructure.Authorization;
 using Sistema.Gestao.Empresarial.Infrastructure.Observability;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
@@ -135,6 +137,24 @@ public sealed class PermissionAuthorizationTests
         Assert.Equal(1, barrier.Version);
         Assert.False(barrier.Ready);
     }
+
+    [Fact]
+    public async Task Administrador_NaoPodeGerenciarUsuarioDeOutraOrganizacao()
+    {
+        await using var fixture = await PermissionFixture.CreateAsync();
+        var actor = await fixture.AddUserAsync("admin@hospital.test");
+        var target = await fixture.AddUserAsync("externo@hospital.test", otherOrganization: true);
+        var manage = await fixture.AddPermissionAsync(PermissionCodes.ManageUserPermissions);
+        fixture.Db.UsuariosPermissoes.Add(new UsuarioPermissao(
+            Guid.NewGuid(), actor.Id, manage.Id, true, fixture.Clock.GetUtcNow()));
+        await fixture.Db.SaveChangesAsync();
+
+        var result = await fixture.Administration.SetDirectPermissionAsync(
+            actor.Guid, target.Guid, manage.Codigo, false,
+            Guid.NewGuid(), "trace", "127.0.0.1", CancellationToken.None);
+
+        Assert.Equal(PermissionChangeResult.Forbidden, result);
+    }
 }
 
 internal sealed class PermissionFixture : IAsyncDisposable
@@ -161,8 +181,13 @@ internal sealed class PermissionFixture : IAsyncDisposable
     public PermissionChecker Checker { get; }
     public PermissionAdministrationService Administration { get; }
     private ServiceProvider MetricsProvider { get; }
+    private UnidadeHospitalar PrimaryUnit { get; set; } = null!;
+    private UnidadeHospitalar OtherUnit { get; set; } = null!;
+    private Profissao Profession { get; set; } = null!;
+    private Cargo Position { get; set; } = null!;
+    private NivelProfissional Level { get; set; } = null!;
 
-    public static Task<PermissionFixture> CreateAsync()
+    public static async Task<PermissionFixture> CreateAsync()
     {
         var clock = new ManualTimeProvider(new DateTimeOffset(2026, 8, 31, 12, 0, 0, TimeSpan.Zero));
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -174,15 +199,40 @@ internal sealed class PermissionFixture : IAsyncDisposable
         var metrics = new PermissionMetrics(metricsProvider.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>());
         var checker = new PermissionChecker(db, cache, metrics, NullLogger<PermissionChecker>.Instance);
         var administration = new PermissionAdministrationService(db, checker, cache, metrics, clock);
-        return Task.FromResult(new PermissionFixture(db, clock, cache, checker, administration, metricsProvider));
+        var fixture = new PermissionFixture(db, clock, cache, checker, administration, metricsProvider);
+        await fixture.SeedOrganizationAsync();
+        return fixture;
     }
 
-    public async Task<Usuario> AddUserAsync(string email)
+    public async Task<Usuario> AddUserAsync(string email, bool otherOrganization = false)
     {
-        var user = new Usuario(Guid.NewGuid(), null, email, "HASH_DE_TESTE", Clock.GetUtcNow());
+        var employee = new Funcionario(
+            Guid.NewGuid(), $"Usuário {Guid.NewGuid():N}", email, null,
+            Profession.Id, Position.Id, Level.Id,
+            otherOrganization ? OtherUnit.Id : PrimaryUnit.Id,
+            new DateOnly(2025, 1, 1), Clock.GetUtcNow());
+        Db.Funcionarios.Add(employee);
+        await Db.SaveChangesAsync();
+        var user = new Usuario(Guid.NewGuid(), employee.Id, email, "HASH_DE_TESTE", Clock.GetUtcNow());
         Db.Usuarios.Add(user);
         await Db.SaveChangesAsync();
         return user;
+    }
+
+    private async Task SeedOrganizationAsync()
+    {
+        var now = Clock.GetUtcNow();
+        var primary = new Organizacao(Guid.NewGuid(), "Rede principal", now);
+        var other = new Organizacao(Guid.NewGuid(), "Outra rede", now);
+        Db.Organizacoes.AddRange(primary, other);
+        await Db.SaveChangesAsync();
+        PrimaryUnit = new UnidadeHospitalar(Guid.NewGuid(), primary.Id, "Hospital principal", now);
+        OtherUnit = new UnidadeHospitalar(Guid.NewGuid(), other.Id, "Hospital externo", now);
+        Profession = new Profissao(Guid.NewGuid(), "Profissão de teste", null, now);
+        Position = new Cargo(Guid.NewGuid(), "Cargo de teste", null, now);
+        Level = new NivelProfissional(Guid.NewGuid(), "TS", "Teste", 1, now);
+        Db.AddRange(PrimaryUnit, OtherUnit, Profession, Position, Level);
+        await Db.SaveChangesAsync();
     }
 
     public async Task<Permissao> AddPermissionAsync(string code)

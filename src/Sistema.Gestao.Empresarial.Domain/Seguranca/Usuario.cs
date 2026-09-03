@@ -21,6 +21,7 @@ public sealed class Usuario : EntidadeAuditavel
     public string Email { get; private set; } = string.Empty;
     public string SenhaHash { get; private set; } = string.Empty;
     public bool Bloqueado { get; private set; }
+    public DateTimeOffset? BloqueadoAte { get; private set; }
     public int TentativasLoginInvalidas { get; private set; }
     public DateTimeOffset? DataUltimoLogin { get; private set; }
     public long VersaoSessao { get; private set; }
@@ -30,21 +31,31 @@ public sealed class Usuario : EntidadeAuditavel
     public void RegistrarLoginValido(DateTimeOffset ocorridoEm)
     {
         TentativasLoginInvalidas = 0;
+        Bloqueado = false;
+        BloqueadoAte = null;
         DataUltimoLogin = ocorridoEm;
         VersaoSessao++;
         MarcarAtualizacao(ocorridoEm);
     }
 
-    public void RegistrarLoginInvalido(DateTimeOffset ocorridoEm, int limiteTentativas)
+    public void RegistrarLoginInvalido(
+        DateTimeOffset ocorridoEm,
+        int limiteTentativas,
+        TimeSpan duracaoBloqueio)
     {
         TentativasLoginInvalidas++;
         if (TentativasLoginInvalidas >= limiteTentativas)
         {
             Bloqueado = true;
+            BloqueadoAte = ocorridoEm.Add(duracaoBloqueio);
+            TentativasLoginInvalidas = 0;
         }
 
         MarcarAtualizacao(ocorridoEm);
     }
+
+    public bool EstaTemporariamenteBloqueado(DateTimeOffset ocorridoEm) =>
+        Bloqueado && BloqueadoAte > ocorridoEm;
 
     public void AlterarSenhaHash(string senhaHash, DateTimeOffset ocorridoEm)
     {

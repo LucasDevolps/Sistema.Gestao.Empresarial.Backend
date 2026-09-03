@@ -24,6 +24,7 @@ public sealed class GlobalExceptionHandler(
         var (status, title, level) = exception switch
         {
             DomainException => (StatusCodes.Status422UnprocessableEntity, "Operação não permitida.", LogLevel.Warning),
+            OrganizationAccessDeniedException => (StatusCodes.Status403Forbidden, "Acesso organizacional negado.", LogLevel.Warning),
             DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Conflito de concorrência.", LogLevel.Warning),
             EmployeePersistenceConflictException => (StatusCodes.Status409Conflict, "Conflito de persistência.", LogLevel.Warning),
             ProfessionalCatalogPersistenceConflictException => (StatusCodes.Status409Conflict, "Conflito de persistência.", LogLevel.Warning),

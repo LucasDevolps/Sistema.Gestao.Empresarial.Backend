@@ -1,0 +1,16 @@
+services:
+  nginx:
+    environment:
+      NGINX_GENERATE_SELF_SIGNED_CERTIFICATE: "false"
+    ports:
+      - "${SGE_HTTP_PORT:-8080}:8080"
+      - "${SGE_HTTPS_PORT:-8443}:8443"
+    volumes:
+      - type: bind
+        source: ${SGE_TLS_CERTIFICATE_PATH:?Defina SGE_TLS_CERTIFICATE_PATH}
+        target: /etc/nginx/certs/tls.crt
+        read_only: true
+      - type: bind
+        source: ${SGE_TLS_PRIVATE_KEY_PATH:?Defina SGE_TLS_PRIVATE_KEY_PATH}
+        target: /etc/nginx/certs/tls.key
+        read_only: true

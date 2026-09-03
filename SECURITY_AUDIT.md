@@ -2,8 +2,8 @@
 
 **Projeto:** Sistema de Gestão Empresarial Backend  
 **Data da revisão:** 2026-09-03  
-**Método:** revisão estática defensiva de código, configuração, infraestrutura, dependências bloqueadas e testes; nenhum ataque, fuzzing, DDoS ou acesso a sistema externo foi realizado.  
-**Limitações:** esta revisão não substitui teste dinâmico autenticado, revisão do ambiente de produção, SAST/DAST contínuo, varredura da imagem final/SBOM, revisão das ACLs do host/cloud e teste de restauração. Os riscos de exposição do Compose pressupõem uso de `docker-compose.override.yml`, que o Docker Compose carrega por padrão; se esse arquivo nunca for usado fora de uma estação isolada, a probabilidade cai, mas a configuração continua perigosa.
+**Método:** revisão estática defensiva de código, configuração, infraestrutura e dependências bloqueadas, complementada por testes automatizados e validação dinâmica controlada da pilha Docker; nenhum ataque, fuzzing, DDoS ou acesso a ambiente externo da organização foi realizado.
+**Limitações:** esta revisão não substitui teste dinâmico autenticado em staging, revisão do ambiente de produção, SAST/DAST contínuo, geração/revisão contínua de SBOM, revisão das ACLs do host/cloud e teste de restauração.
 
 ## Resumo executivo
 
@@ -12,6 +12,53 @@ A aplicação contém bons controles: política de autorização *fallback deny*
 Apesar disso, **o perfil Compose fornecido não deve ser publicado na Internet**. A combinação mais grave é Redis sem autenticação/TLS publicado em todas as interfaces, sendo Redis fonte operacional de sessões e permissões. Há ainda SQL Server com conta `sa`, console RabbitMQ e telemetria publicados pelo override, ambiente `Development` aplicado à pilha base, certificado autogerado habilitado por padrão e serviços internos sem TLS. No código, o modelo possui organizações/unidades, mas identidade, permissões e consultas de funcionários são globais: não existe escopo organizacional no JWT nem filtro de tenant. Isso permite acesso entre organizações a qualquer usuário que receba uma permissão funcional global.
 
 **Decisão:** **NO-GO para produção pública** até corrigir SEC-01 a SEC-05 e validar dinamicamente isolamento organizacional, provisionamento inicial de permissões e topologia real de rede/proxy.
+
+## Situação após remediação no repositório
+
+**Atualização em 2026-09-03:** as correções estáticas abaixo foram implementadas e
+validadas pela suíte local e por uma pilha Docker isolada no WSL. A decisão continua
+**NO-GO para produção pública** até o teste autenticado em staging com dois tenants,
+definição de TLS para tráfego interno que atravesse hosts e tratamento
+dos registros históricos de auditoria que possam conter PII.
+
+| Achado | Situação | Remediação aplicada / risco residual |
+| --- | --- | --- |
+| SEC-01 | Mitigado | Redis deixou de ser publicado, recebeu ACL autenticada limitada ao namespace `sge*` e está em rede interna. TLS ainda é obrigatório se Redis sair do mesmo host/rede privada. |
+| SEC-02 | Corrigido estaticamente | Escopo é resolvido no servidor por `Usuário → Funcionário → Unidade → Organização`; consultas/mutações de funcionários e gestão de permissões filtram o tenant e negam atores sem vínculo. Foram adicionados testes cross-tenant negativos. |
+| SEC-03 | Corrigido estaticamente | Porta SQL removida do override e runtime passou a login dedicado com `SELECT`/`INSERT`/`UPDATE` apenas no schema `sge` e `DELETE`/DDL negados; `sa` fica restrito ao bootstrap/migration. |
+| SEC-04 | Mitigado | Management/AMQP não são publicados por padrão, broker usa vhost `/sge` e rede interna. TLS/mTLS permanece requisito para topologias entre hosts. |
+| SEC-05 | Corrigido estaticamente | Base usa `Production`, certificado autogerado falha fechado por padrão e overlay produtivo exige certificado/chave montados. Autogeração existe apenas no override/CI. |
+| SEC-06 | Mitigado | Auditoria HTTP futura não captura corpos, query, headers, IP ou User-Agent. Dados históricos precisam de política de retenção/expurgo aprovada antes do go-live. |
+| SEC-07 | Parcial | Limite ASP.NET usa identidade autenticada ou IP e o Nginx mantém limite por IP. WAF/limite distribuído ainda depende da plataforma de produção. |
+| SEC-08 | Corrigido estaticamente | Auditoria usa canal limitado e worker assíncrono; rate limiting e autorização executam antes da captura. Saturação descarta com alerta sem bloquear a requisição. |
+| SEC-09 | Corrigido | Criação limita explicitamente unidades de atuação e setores a 50 itens cada. |
+| SEC-10 | Corrigido | Bloqueio por cinco falhas passou a ser temporário (15 minutos) e expira automaticamente; migration adicionada. |
+| SEC-11 | Corrigido | API e Nginx enviam `Cache-Control: no-store, private` e `Pragma: no-cache`. |
+| SEC-12 | Corrigido | Todas as imagens usadas por Dockerfiles, Compose e scripts foram fixadas por digest SHA-256 consultado no registry. |
+| SEC-13 | Corrigido | GitHub Actions foram fixadas por commit SHA completo, preservando a versão em comentário. |
+| SEC-14 | Mitigado | Foram adicionados limites de CPU/memória/PIDs, `no-new-privileges`, filesystem read-only/tmpfs e `cap_drop` onde compatível. Limites finais devem ser calibrados por carga. |
+| SEC-15 | Corrigido | Nginx valida o hostname configurado e usa valor canônico literal no redirect, sem refletir `Host`. `AllowedHosts` é definido pelo deployment. |
+| SEC-16 | Corrigido no edge | `/health/ready` retorna 404 no Nginx e só permanece disponível nas redes internas para health checks. |
+| SEC-17 | Corrigido | CSP da API/edge usa `default-src 'none'` sem `unsafe-inline`. |
+| SEC-18 | Corrigido no Compose | OTLP deixou de ser publicado e sampling produtivo padrão caiu para 10%. Autenticação/TLS do backend externo continua responsabilidade da plataforma. |
+
+**Verificações executadas:** restore locked e NuGet Audit online sem pacote vulnerável
+conhecido; build Release sem warnings; `dotnet format --verify-no-changes`; 7 testes
+unitários e 51 testes de integração não-real aprovados; `git diff --check` aprovado.
+Docker via WSL validou os três manifests, construiu as imagens, iniciou a pilha
+completa e aprovou 10 testes `RealInfrastructure`. O Trivy encontrou 20 CVEs High
+na imagem Nginx 1.28/Alpine 3.21 originalmente fixada; ela foi substituída por
+Nginx 1.30.4/Alpine 3.24 e a nova imagem, API e Worker ficaram com zero achados
+High/Critical corrigíveis. A pilha isolada também confirmou Redis anônimo negado,
+DELETE/DDL SQL negados ao runtime, readiness 404 no edge e ausência de portas de
+dados/admin publicadas.
+
+**Ação operacional pendente:** a pilha preexistente `sistema-gestao-empresarial`,
+criada antes destas alterações, permaneceu em execução durante a auditoria e ainda
+publicava Redis (`6379`), SQL Server (`11433`), RabbitMQ Management (`15673`) e OTLP
+(`4317`/`4318`) em todas as interfaces. Ela não foi interrompida para evitar perda de
+estado do ambiente do desenvolvedor. É necessário recriá-la com os manifests novos e
+rotacionar as credenciais usadas pela pilha antiga antes de considerar o host seguro.
 
 ## Matriz final de risco
 

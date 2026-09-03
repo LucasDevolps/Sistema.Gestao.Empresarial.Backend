@@ -25,10 +25,11 @@ docker run --rm \
   --workdir /workspace \
   --env "SGE_REAL_INFRASTRUCTURE_TESTS=true" \
   --env "SGE_TEST_SQLSERVER=Server=sqlserver,1433;Database=master;User Id=sa;Password=${SGE_SQLSERVER_SA_PASSWORD};Encrypt=True;TrustServerCertificate=True" \
-  --env "SGE_TEST_REDIS=redis:6379,abortConnect=false" \
+  --env "SGE_TEST_REDIS=redis:6379,user=${SGE_REDIS_USERNAME},password=${SGE_REDIS_PASSWORD},abortConnect=false" \
   --env "SGE_TEST_RABBITMQ_HOST=rabbitmq" \
   --env "SGE_TEST_RABBITMQ_PORT=5672" \
   --env "SGE_TEST_RABBITMQ_USERNAME=${SGE_RABBITMQ_USERNAME}" \
   --env "SGE_TEST_RABBITMQ_PASSWORD=${SGE_RABBITMQ_PASSWORD}" \
-  mcr.microsoft.com/dotnet/sdk:10.0 \
+  --env "SGE_TEST_RABBITMQ_VIRTUAL_HOST=/sge" \
+  mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c \
   bash -lc "tar --exclude='bin' --exclude='obj' -C /source -cf - . | tar -C /workspace -xf - && dotnet restore Sistema.Gestao.Empresarial.sln --locked-mode && dotnet test tests/Sistema.Gestao.Empresarial.IntegrationTests --configuration Release --no-restore --filter 'Category=RealInfrastructure'"

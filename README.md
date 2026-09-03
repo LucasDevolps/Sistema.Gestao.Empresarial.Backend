@@ -11,7 +11,7 @@ auditoria HTTP e publicação confiável pela Outbox. O desenho e as decisões d
 - autenticação JWT com refresh token rotativo e autoridade real da sessão no SQL/Redis;
 - somente uma sessão ativa por usuário e timeout deslizante por inatividade;
 - autorização por permissões, deny-by-default e proteção contra autoelevação;
-- auditoria de request/response com mascaramento de dados sensíveis;
+- auditoria assíncrona de metadados mínimos, sem captura de corpos ou PII de rede;
 - Transactional Outbox com publicação at-least-once pelo Worker;
 - Inbox durável, consumer idempotente, classificação de falhas e auditoria de mensagens;
 - funcionários com matrícula gerada pelo SQL e vínculos históricos multi-hospital;
@@ -42,8 +42,9 @@ O Nginx é a única entrada pública da API: `http://localhost:8080` redireciona
 confiança explícita do cliente; em qualquer ambiente compartilhado, desabilite
 `SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE` e monte um certificado emitido por uma
 CA confiável. Swagger fica em `/swagger` apenas no ambiente de desenvolvimento.
-RabbitMQ Management fica em `http://localhost:15672` somente pelo override local, e
-os endpoints de saúde são `/health/live` e `/health/ready`.
+SQL Server, Redis, RabbitMQ Management e OTLP não são publicados nem mesmo pelo
+override local. O único health check público no Nginx é `/nginx-health`;
+`/health/ready` permanece acessível apenas na rede interna para o orquestrador.
 
 Quando o Docker estiver disponível somente no WSL:
 
@@ -73,15 +74,18 @@ Nginx na rede Docker interna `sge-api-proxy`. `RemoteIpAddress`, rate limiting,
 sessões e `ApiRequestLog.IpOrigem` usam, portanto, o IP do cliente já validado pelo
 middleware, não o IP do proxy e nem um header fornecido pelo cliente.
 
-Há ainda uma segunda camada de rate limiting no ASP.NET Core: limite global por IP
+Há ainda uma segunda camada de rate limiting no ASP.NET Core: limite global por identidade autenticada ou IP
 e política mais restritiva em `/api/auth/login` e `/api/auth/refresh`. Kestrel limita
 o body a 1 MiB, o tempo de headers, keep-alive e a taxa mínima de leitura. Os mesmos
 limites principais existem no Nginx para rejeitar abuso antes de atingir a aplicação.
 
-O Compose deste repositório é destinado a desenvolvimento/validação. Em produção,
-não publique SQL Server, Redis, RabbitMQ Management ou OTLP; forneça certificado e
-chave por secret, configure `AllowedHosts` e mantenha `ReverseProxy:KnownProxies`
-restrito aos endereços reais dos proxies/load balancers autorizados.
+O arquivo base do Compose usa `Production`, rede interna, Redis autenticado, usuário
+SQL de runtime sem DDL e nenhum serviço publicado. Para produção, use também
+`docker-compose.production.yml`, forneça certificado e chave confiáveis pelos paths
+`SGE_TLS_CERTIFICATE_PATH`/`SGE_TLS_PRIVATE_KEY_PATH`, configure
+`SGE_NGINX_SERVER_NAME` e mantenha `ReverseProxy:KnownProxies` restrito aos proxies
+reais. O `docker-compose.override.yml`, carregado automaticamente no desenvolvimento,
+é o único local em que o certificado autogerado é habilitado.
 
 ## Autenticação
 
@@ -133,18 +137,16 @@ wsl bash ./scripts/apply-migrations-docker.sh
 ```
 
 Não execute migration automaticamente em cada réplica. Em deploy, use um job único
-e controlado. O `docker-compose.override.yml` publica portas para conveniência local;
-para ensaiar múltiplas réplicas sem conflito de porta, suba somente o arquivo base e
-coloque um reverse proxy diante das APIs.
+e controlado. O `docker-compose.override.yml` publica somente o Nginx para
+conveniência local; as portas administrativas e de dados continuam privadas.
 
 ## Auditoria HTTP
 
-Todas as requisições atravessam um middleware que persiste método, endpoint, headers,
-query string, request/response body, status, duração, usuário, IP, ambiente,
-`CorrelationId` e `TraceId` em `ApiRequestLogs`. A captura é limitada por tamanho e
-somente bodies JSON ou form-urlencoded são armazenados; conteúdos binários recebem
-um marcador seguro. Senhas, tokens, cookies, API keys, secrets e authorization são
-mascarados recursivamente antes da persistência.
+Requisições autorizadas enfileiram somente método, endpoint sem query, status,
+duração, identificador do usuário, ambiente, `CorrelationId`, `TraceId` e tipo de
+exceção. Corpos, headers, query string, IP e User-Agent não são persistidos. Uma fila
+limitada grava esses metadados fora do caminho da requisição e descarta com alerta
+quando saturada, evitando que indisponibilidade do SQL amplifique tráfego hostil.
 
 ## Publicação da Outbox
 
@@ -193,6 +195,11 @@ setor exige atuação ativa na unidade correspondente. Encerramentos informam da
 inativam o relacionamento e preservam todo o histórico; não existem endpoints
 HTTP `DELETE`. Cada alteração persiste `AuditLog` e `OutboxMessage` na mesma
 transação da mudança de domínio.
+
+O escopo do ator é resolvido no servidor pelo vínculo
+`Usuário → Funcionário → Unidade de contratação → Organização`. Listagens, leituras,
+mutações e administração de permissões negam por padrão atores sem esse vínculo e
+não retornam objetos pertencentes a outra organização.
 
 ## Catálogos profissionais
 

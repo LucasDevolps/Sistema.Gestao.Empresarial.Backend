@@ -31,7 +31,7 @@ public sealed class RabbitMqInboxTests(RealInfrastructureFixture fixture)
             configuration.Host(
                 fixture.RabbitMqHost,
                 fixture.RabbitMqPort,
-                "/",
+                fixture.RabbitMqVirtualHost,
                 host =>
                 {
                     host.Username(fixture.RabbitMqUsername);

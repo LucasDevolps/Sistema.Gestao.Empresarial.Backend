@@ -13,6 +13,12 @@ public sealed class NginxConfigurationTests
         Assert.Contains("authentication_per_ip", nginx, StringComparison.Ordinal);
         Assert.Contains("Strict-Transport-Security", nginx, StringComparison.Ordinal);
         Assert.Contains("ssl_protocols TLSv1.2 TLSv1.3", nginx, StringComparison.Ordinal);
+        Assert.Contains("return 308 https://__SERVER_NAME__:8443$request_uri", nginx, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://$host", nginx, StringComparison.Ordinal);
+        Assert.Contains("listen 8080 default_server", nginx, StringComparison.Ordinal);
+        Assert.Contains("listen 8443 ssl default_server", nginx, StringComparison.Ordinal);
+        Assert.Contains("location = /health/ready", nginx, StringComparison.Ordinal);
+        Assert.Contains("Cache-Control \"no-store, private\"", nginx, StringComparison.Ordinal);
         Assert.Contains("proxy_set_header X-Forwarded-For $remote_addr", proxy, StringComparison.Ordinal);
         Assert.DoesNotContain("$proxy_add_x_forwarded_for", proxy, StringComparison.Ordinal);
     }
@@ -27,7 +33,16 @@ public sealed class NginxConfigurationTests
 
         Assert.DoesNotContain("ports:", apiSection, StringComparison.Ordinal);
         Assert.DoesNotContain("15672", rabbitSection, StringComparison.Ordinal);
-        Assert.Contains("ReverseProxy__KnownProxies__0: 172.30.0.2", apiSection, StringComparison.Ordinal);
+        Assert.Contains("ReverseProxy__KnownProxies__0: ${SGE_NGINX_INTERNAL_IP:-172.30.0.2}", apiSection, StringComparison.Ordinal);
+
+        var developmentOverride = File.ReadAllText(Path.Combine(root, "docker-compose.override.yml"));
+        Assert.DoesNotContain("1433:1433", developmentOverride, StringComparison.Ordinal);
+        Assert.DoesNotContain("6379:6379", developmentOverride, StringComparison.Ordinal);
+        Assert.DoesNotContain("15672:15672", developmentOverride, StringComparison.Ordinal);
+        Assert.DoesNotContain("4317:4317", developmentOverride, StringComparison.Ordinal);
+        Assert.Contains("DOTNET_ENVIRONMENT: Development", developmentOverride, StringComparison.Ordinal);
+        Assert.Contains("DOTNET_ENVIRONMENT: Production", compose, StringComparison.Ordinal);
+        Assert.Contains("--aclfile /tmp/users.acl", compose, StringComparison.Ordinal);
     }
 
     private static string Between(string value, string start, string end)

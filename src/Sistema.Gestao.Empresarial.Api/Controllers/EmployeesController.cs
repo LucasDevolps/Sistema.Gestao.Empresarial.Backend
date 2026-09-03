@@ -38,7 +38,12 @@ public sealed class EmployeesController(
             return ValidationProblem(ToProblem(validation));
         }
 
-        return Ok(await employees.ListAsync(query, cancellationToken));
+        if (!TryCreateContext(out var context))
+        {
+            return Unauthorized();
+        }
+
+        return Ok(await employees.ListAsync(query, context, cancellationToken));
     }
 
     [HttpGet("{employeeGuid:guid}", Name = nameof(GetByGuid))]
@@ -47,7 +52,12 @@ public sealed class EmployeesController(
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetByGuid(Guid employeeGuid, CancellationToken cancellationToken)
     {
-        var response = await employees.GetAsync(employeeGuid, cancellationToken);
+        if (!TryCreateContext(out var context))
+        {
+            return Unauthorized();
+        }
+
+        var response = await employees.GetAsync(employeeGuid, context, cancellationToken);
         return response is null ? NotFound() : Ok(response);
     }
 

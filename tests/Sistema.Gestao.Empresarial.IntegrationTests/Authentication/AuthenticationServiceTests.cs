@@ -51,6 +51,29 @@ public sealed class AuthenticationServiceTests
     }
 
     [Fact]
+    public async Task BloqueioPorFalhas_DeveExpirarAutomaticamente()
+    {
+        await using var fixture = await AuthenticationFixture.CreateAsync();
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            Assert.Null(await fixture.Service.LoginAsync(
+                new LoginRequest(fixture.Email, "senha-incorreta"),
+                fixture.Context,
+                CancellationToken.None));
+        }
+
+        var locked = await fixture.Db.Usuarios.SingleAsync();
+        Assert.True(locked.EstaTemporariamenteBloqueado(fixture.Clock.GetUtcNow()));
+
+        fixture.Clock.Advance(TimeSpan.FromMinutes(15));
+        var response = await fixture.Service.LoginAsync(
+            new LoginRequest(fixture.Email, fixture.Password), fixture.Context, CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.False((await fixture.Db.Usuarios.SingleAsync()).Bloqueado);
+    }
+
+    [Fact]
     public async Task NovoLogin_DeveRevogarSessaoAnterior()
     {
         await using var fixture = await AuthenticationFixture.CreateAsync();
