@@ -1,7 +1,10 @@
 using System.Text;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using Sistema.Gestao.Empresarial.Application.Authentication;
@@ -15,9 +18,28 @@ using Sistema.Gestao.Empresarial.Api.Auditing;
 
 var builder = WebApplication.CreateBuilder(args);
 
+var kestrelSecurity = builder.Configuration
+    .GetRequiredSection(KestrelSecurityOptions.SectionName)
+    .Get<KestrelSecurityOptions>()
+    ?? throw new InvalidOperationException("A seção KestrelSecurity é obrigatória.");
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = kestrelSecurity.MaxRequestBodySizeBytes;
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(kestrelSecurity.RequestHeadersTimeoutSeconds);
+    options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(kestrelSecurity.KeepAliveTimeoutSeconds);
+    options.Limits.MinRequestBodyDataRate = new MinDataRate(
+        kestrelSecurity.MinRequestBodyDataRateBytesPerSecond,
+        TimeSpan.FromSeconds(kestrelSecurity.MinRequestBodyDataRateGracePeriodSeconds));
+});
+
 builder.Logging.AddStructuredOpenTelemetry(builder.Configuration);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration, "Sistema.Gestao.Empresarial.Api");
+builder.Services.AddTrustedProxy(builder.Configuration);
+builder.Services.AddOptions<KestrelSecurityOptions>()
+    .Bind(builder.Configuration.GetRequiredSection(KestrelSecurityOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 builder.Services.AddOptions<JwtOptions>()
     .Bind(builder.Configuration.GetRequiredSection(JwtOptions.SectionName))
     .ValidateDataAnnotations()
@@ -27,6 +49,65 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddSingleton<ISensitiveDataRedactor, SensitiveDataRedactor>();
+builder.Services.AddHsts(options =>
+{
+    options.IncludeSubDomains = true;
+    options.MaxAge = TimeSpan.FromDays(365);
+});
+
+var rateLimits = builder.Configuration
+    .GetRequiredSection(ApiRateLimitingOptions.SectionName)
+    .Get<ApiRateLimitingOptions>()
+    ?? throw new InvalidOperationException("A seção RateLimiting é obrigatória.");
+builder.Services.AddOptions<ApiRateLimitingOptions>()
+    .Bind(builder.Configuration.GetRequiredSection(ApiRateLimitingOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            $"global:{ClientIp(context)}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = rateLimits.GlobalPermitLimit,
+                QueueLimit = 0,
+                Window = TimeSpan.FromSeconds(rateLimits.GlobalWindowSeconds)
+            }));
+    options.AddPolicy(RateLimitPolicies.Authentication, context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            $"authentication:{ClientIp(context)}",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = rateLimits.AuthenticationPermitLimit,
+                QueueLimit = 0,
+                Window = TimeSpan.FromSeconds(rateLimits.AuthenticationWindowSeconds)
+            }));
+    options.OnRejected = async (context, cancellationToken) =>
+    {
+        context.HttpContext.Response.ContentType = "application/problem+json";
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
+        {
+            context.HttpContext.Response.Headers.RetryAfter =
+                Math.Ceiling(retryAfter.TotalSeconds).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        var correlationId = context.HttpContext.Items.TryGetValue("CorrelationId", out var value)
+            ? value?.ToString()
+            : null;
+        await context.HttpContext.Response.WriteAsJsonAsync(
+            new
+            {
+                title = "Limite de requisições excedido.",
+                status = StatusCodes.Status429TooManyRequests,
+                correlationId
+            },
+            cancellationToken);
+    };
+});
 
 var jwt = builder.Configuration.GetRequiredSection(JwtOptions.SectionName).Get<JwtOptions>()
     ?? throw new InvalidOperationException("A seção Jwt é obrigatória.");
@@ -115,6 +196,16 @@ builder.Services.AddHealthChecks()
 
 var app = builder.Build();
 
+var reverseProxy = app.Configuration
+    .GetRequiredSection(ReverseProxyOptions.SectionName)
+    .Get<ReverseProxyOptions>()!;
+if (reverseProxy.Enabled)
+{
+    app.UseForwardedHeaders();
+}
+
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 app.Use(async (context, next) =>
 {
     var incoming = context.Request.Headers["X-Correlation-ID"].FirstOrDefault();
@@ -125,6 +216,10 @@ app.Use(async (context, next) =>
 });
 app.UseMiddleware<ApiRequestAuditMiddleware>();
 app.UseExceptionHandler();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+}
 if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
@@ -132,6 +227,8 @@ if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
@@ -153,5 +250,8 @@ app.MapHealthChecks("/health", new HealthCheckOptions
 }).RequireAuthorization();
 
 app.Run();
+
+static string ClientIp(HttpContext context) =>
+    context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
 public partial class Program;

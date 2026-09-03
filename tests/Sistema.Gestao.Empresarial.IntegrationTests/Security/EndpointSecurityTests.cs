@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -73,6 +74,23 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
         Assert.Contains(
             logout.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             authorization => authorization.Policy == AuthPolicies.ActiveSession);
+    }
+
+    [Fact]
+    public void LoginERefresh_DevemExigirRateLimitDeAutenticacao()
+    {
+        _factory.CreateClient();
+        var authenticationEndpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => endpoint.RoutePattern.RawText is "api/auth/login" or "api/auth/refresh")
+            .ToArray();
+
+        Assert.Equal(2, authenticationEndpoints.Length);
+        Assert.All(authenticationEndpoints, endpoint =>
+            Assert.Equal(
+                RateLimitPolicies.Authentication,
+                endpoint.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName));
     }
 
     [Fact]

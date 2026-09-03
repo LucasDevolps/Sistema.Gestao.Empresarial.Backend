@@ -16,7 +16,7 @@ auditoria HTTP e publicação confiável pela Outbox. O desenho e as decisões d
 - Inbox durável, consumer idempotente, classificação de falhas e auditoria de mensagens;
 - funcionários com matrícula gerada pelo SQL e vínculos históricos multi-hospital;
 - health checks, logs estruturados, métricas e traces OpenTelemetry;
-- SQL Server, Redis, RabbitMQ, API, Worker e Collector executáveis via Compose;
+- Nginx, SQL Server, Redis, RabbitMQ, API, Worker e Collector executáveis via Compose;
 - testes unitários, integração e validação arquitetural de segurança.
 
 ## Desenvolvimento
@@ -37,9 +37,13 @@ todos os valores `CHANGE_ME` por segredos locais fortes e execute:
 docker compose up --build
 ```
 
-A API fica em `http://localhost:8080`, Swagger em `/swagger` apenas no ambiente de
-desenvolvimento, RabbitMQ Management em `http://localhost:15672` por padrão, e os endpoints de
-saúde em `/health/live` e `/health/ready`.
+O Nginx é a única entrada pública da API: `http://localhost:8080` redireciona para
+`https://localhost:8443`. O certificado autogerado é exclusivamente local e exigirá
+confiança explícita do cliente; em qualquer ambiente compartilhado, desabilite
+`SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE` e monte um certificado emitido por uma
+CA confiável. Swagger fica em `/swagger` apenas no ambiente de desenvolvimento.
+RabbitMQ Management fica em `http://localhost:15672` somente pelo override local, e
+os endpoints de saúde são `/health/live` e `/health/ready`.
 
 Quando o Docker estiver disponível somente no WSL:
 
@@ -59,6 +63,25 @@ wsl bash ./scripts/run-real-integration-tests-wsl.sh
 
 Sem a flag explícita, esses testes são marcados como ignorados para evitar que uma
 execução aparentemente integrada use dependências inexistentes.
+
+## Perímetro HTTP e IP real
+
+O Nginx termina TLS, limita conexões, requests e payloads, aplica timeouts e headers
+de segurança e sobrescreve `X-Forwarded-For` com o endereço observado na conexão.
+A API não publica porta no host e aceita forwarded headers somente do IP fixo do
+Nginx na rede Docker interna `sge-api-proxy`. `RemoteIpAddress`, rate limiting,
+sessões e `ApiRequestLog.IpOrigem` usam, portanto, o IP do cliente já validado pelo
+middleware, não o IP do proxy e nem um header fornecido pelo cliente.
+
+Há ainda uma segunda camada de rate limiting no ASP.NET Core: limite global por IP
+e política mais restritiva em `/api/auth/login` e `/api/auth/refresh`. Kestrel limita
+o body a 1 MiB, o tempo de headers, keep-alive e a taxa mínima de leitura. Os mesmos
+limites principais existem no Nginx para rejeitar abuso antes de atingir a aplicação.
+
+O Compose deste repositório é destinado a desenvolvimento/validação. Em produção,
+não publique SQL Server, Redis, RabbitMQ Management ou OTLP; forneça certificado e
+chave por secret, configure `AllowedHosts` e mantenha `ReverseProxy:KnownProxies`
+restrito aos endereços reais dos proxies/load balancers autorizados.
 
 ## Autenticação
 
