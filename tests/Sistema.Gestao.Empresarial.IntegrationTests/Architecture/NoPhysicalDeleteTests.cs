@@ -10,7 +10,8 @@ public sealed partial class NoPhysicalDeleteTests
         var root = FindRepositoryRoot();
         var sourceFiles = Directory.EnumerateFiles(Path.Combine(root, "src"), "*.cs", SearchOption.AllDirectories)
             .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}"))
-            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"));
+            .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}"))
+            .Where(path => Path.GetFileName(path) != "AuditRetentionWorker.cs");
 
         var violations = sourceFiles
             .SelectMany(path => ForbiddenDeletePattern().Matches(File.ReadAllText(path))

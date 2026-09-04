@@ -71,6 +71,10 @@ public static class DependencyInjection
         AddValidatedOptions<OutboxOptions>(services, configuration, OutboxOptions.SectionName);
         AddValidatedOptions<InboxOptions>(services, configuration, InboxOptions.SectionName);
         AddValidatedOptions<AuditOptions>(services, configuration, AuditOptions.SectionName);
+        services.AddOptions<AuditRetentionOptions>()
+            .Bind(configuration.GetSection(AuditRetentionOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
         AddValidatedOptions<OpenTelemetryOptions>(services, configuration, OpenTelemetryOptions.SectionName);
 
         services.AddSingleton(TimeProvider.System);

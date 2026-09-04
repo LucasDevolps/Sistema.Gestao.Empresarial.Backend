@@ -134,6 +134,28 @@ public sealed class AuditOptions
     public int ChannelCapacity { get; init; } = 5000;
 }
 
+public sealed class AuditRetentionOptions
+{
+    public const string SectionName = "AuditRetention";
+
+    public bool Enabled { get; init; } = true;
+
+    [Range(180, 3650)]
+    public int HttpAccessLogDays { get; init; } = 180;
+
+    [Range(365, 7300)]
+    public int BusinessAuditDays { get; init; } = 1825;
+
+    [Range(100, 1000)]
+    public int BatchSize { get; init; } = 500;
+
+    [Range(1, 168)]
+    public int SweepIntervalHours { get; init; } = 24;
+
+    [Range(1, 100)]
+    public int MaximumBatchesPerSweep { get; init; } = 20;
+}
+
 public sealed class OpenTelemetryOptions
 {
     public const string SectionName = "OpenTelemetry";
