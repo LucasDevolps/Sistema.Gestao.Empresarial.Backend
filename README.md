@@ -6,6 +6,9 @@ multi-hospital, autenticação com sessão persistida, autorização configuráv
 auditoria HTTP e publicação confiável pela Outbox. O desenho e as decisões de segurança estão em
 [`docs/architecture.md`](docs/architecture.md).
 
+O checklist de go-live, a política de retenção e o procedimento comprovável de
+backup/restore estão em [`docs/production-readiness.md`](docs/production-readiness.md).
+
 ## Estado atual
 
 - autenticação JWT com refresh token rotativo e autoridade real da sessão no SQL/Redis;

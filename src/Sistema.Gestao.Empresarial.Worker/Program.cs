@@ -7,6 +7,7 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Sistema.Gestao.Empresarial.Application;
 using Sistema.Gestao.Empresarial.Application.Integration;
 using Sistema.Gestao.Empresarial.Infrastructure;
+using Sistema.Gestao.Empresarial.Infrastructure.Auditing;
 using Sistema.Gestao.Empresarial.Infrastructure.Configuration;
 using Sistema.Gestao.Empresarial.Infrastructure.Health;
 using Sistema.Gestao.Empresarial.Infrastructure.Messaging;
@@ -57,6 +58,7 @@ builder.Services.AddScoped<IInboxProcessor, InboxProcessor>();
 builder.Services.AddScoped<IInboxFailureRecorder, InboxFailureRecorder>();
 builder.Services.AddScoped<IIntegrationEventHandler, AuditOnlyIntegrationEventHandler>();
 builder.Services.AddHostedService<OutboxPublisherWorker>();
+builder.Services.AddHostedService<AuditRetentionWorker>();
 builder.Services.AddHealthChecks()
     .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
     .AddDbContextCheck<AppDbContext>("sqlserver", tags: ["ready"])

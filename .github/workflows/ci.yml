@@ -2,7 +2,7 @@ name: backend-ci
 
 on:
   push:
-    branches: [main, master, develop, "feature/**"]
+    branches: [main, master, develop, "feature/**", "feat/**"]
   pull_request:
     branches: [main, master, develop]
   workflow_dispatch:
@@ -102,6 +102,47 @@ jobs:
       - name: Build container images
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
 
+      - name: Scan API image for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: sistema-gestao-empresarial-api:latest
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: Scan Worker image for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: sistema-gestao-empresarial-worker:latest
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: Scan Nginx image for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: sistema-gestao-empresarial-nginx:latest
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+
+      - name: Prepare security artifacts
+        run: mkdir -p artifacts/sbom
+
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: cyclonedx
+          output: artifacts/sbom/backend.cdx.json
+
       - name: Start real integration dependencies
         run: >-
           docker compose
@@ -178,3 +219,4 @@ jobs:
             TestResults/**/*.trx
             TestResults/**/coverage.cobertura.xml
             artifacts/migrations.sql
+            artifacts/sbom/backend.cdx.json
