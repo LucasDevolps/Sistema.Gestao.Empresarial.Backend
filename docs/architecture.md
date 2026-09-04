@@ -392,3 +392,23 @@ usuário, até mesmo soft-deleted, já existe. No SQL Server, uma transação se
 e `sp_getapplock` impedem dois provisionamentos concorrentes. Organização, unidade,
 catálogos mínimos, funcionário, usuário, perfil integral, auditoria e Outbox são
 persistidos atomicamente; senha e hash nunca entram nos eventos ou logs de domínio.
+
+## Orquestração local com .NET Aspire
+
+O projeto `Sistema.Gestao.Empresarial.AppHost` modela exclusivamente o ambiente de
+desenvolvimento local. Ele inicia SQL Server, Redis e RabbitMQ em containers,
+executa a inicialização do login SQL de menor privilégio e as migrations como jobs
+one-shot e, depois, executa API e Worker como projetos .NET. Dependências de
+startup e health checks autenticados ficam visíveis no Aspire Dashboard.
+
+Não foi criado `ServiceDefaults`: observabilidade e health checks já são definidos
+pela aplicação, e uma segunda camada duplicaria providers e instrumentações. O
+AppHost fornece ao `OpenTelemetry:OtlpEndpoint` existente o endpoint temporário do
+Dashboard apenas em Development. Não há captura adicional de headers, corpos,
+query strings, tokens ou PII.
+
+O modelo Aspire não é artefato de produção. Compose, Nginx, Collector, redes
+internas, imagens fixadas por digest e controles de hardening continuam sendo a
+fonte de verdade do deployment. Dashboard e endpoints dos recursos não são
+publicados pelo Nginx; no desenvolvimento Aspire, listeners alocados no host são
+restritos ao loopback.

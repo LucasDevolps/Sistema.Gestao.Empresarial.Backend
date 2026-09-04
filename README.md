@@ -266,3 +266,73 @@ tentativa fica preservada em `InboxMessages` e `MessageAuditLogs`.
 Nenhuma mensagem, tentativa ou auditoria é fisicamente apagada. Os testes
 `RealInfrastructure` exercitam concorrência e atomicidade usando SQL Server, Redis
 e RabbitMQ reais.
+
+## Desenvolvimento com .NET Aspire
+
+O AppHost oferece uma segunda experiência de desenvolvimento local para iniciar e
+observar API, Worker, SQL Server, Redis e RabbitMQ em um único Dashboard. Ele exige
+o SDK .NET `10.0.400` definido em `global.json`, certificado de desenvolvimento
+HTTPS confiável, Docker Desktop ou Podman compatível com o suporte atual do
+Aspire e a Aspire CLI `13.5.3`. O AppHost usa Aspire `13.5.3`, versão estável
+compatível com `net10.0`. Instale ou atualize a CLI com:
+
+```powershell
+dotnet tool install --global Aspire.Cli --version 13.5.3
+# Se já estiver instalada:
+dotnet tool update --global Aspire.Cli --version 13.5.3
+```
+
+Configure valores locais exclusivos, nunca credenciais de produção. Na primeira
+execução, o Dashboard solicita os parâmetros ausentes; marque a opção para gravar
+os valores no User Secrets do AppHost. Os nomes de configuração são:
+
+```text
+SGE_SQLSERVER_SA_PASSWORD
+SGE_SQLSERVER_APP_USERNAME
+SGE_SQLSERVER_APP_PASSWORD
+SGE_REDIS_USERNAME
+SGE_REDIS_PASSWORD
+SGE_RABBITMQ_USERNAME
+SGE_RABBITMQ_PASSWORD
+SGE_JWT_SIGNING_KEY
+```
+
+Também é possível fornecê-los como variáveis de ambiente do processo. Senhas não
+devem ser passadas como argumentos de linha de comando nem gravadas em
+`appsettings*.json`. A senha SQL administrativa é usada somente pelo container e
+pelo job de migrations; API e Worker recebem exclusivamente o login restrito da
+aplicação. O Redis inicia com o usuário `default` desabilitado e uma ACL limitada
+ao namespace `sge*`. RabbitMQ mantém o vhost `/sge`.
+
+Inicie a partir da raiz do repositório:
+
+```powershell
+dotnet run --project src/Sistema.Gestao.Empresarial.AppHost
+```
+
+O comando abre o Dashboard em `https://localhost:17088`, protegido pelo browser
+token gerado pelo Aspire e limitado ao loopback. O fluxo de startup aguarda SQL,
+cria o login restrito, aplica migrations, valida Redis/RabbitMQ com autenticação e
+então inicia API e Worker. A API aparece diretamente no Dashboard para uso local;
+esse endpoint não representa o perímetro de produção, que continua no Nginx.
+Logs, traces e métricas usam a instrumentação OpenTelemetry já existente e apenas
+trocam o destino OTLP para o Dashboard durante essa execução.
+
+Para parar, pressione `Ctrl+C`. SQL Server, Redis e RabbitMQ usam volumes locais
+nomeados para sobreviver a reinicializações. Depois de parar o AppHost, limpe-os
+explicitamente quando quiser recriar todo o ambiente:
+
+```powershell
+docker volume rm sge-aspire-sql-data sge-aspire-redis-data sge-aspire-rabbitmq-data
+```
+
+As portas dinâmicas dos serviços de dados são vinculadas somente ao host local
+para que os projetos executados pelo AppHost possam acessá-las. O endpoint de
+Management do RabbitMQ não é publicado. Nenhuma porta do Dashboard ou recurso
+Aspire foi adicionada ao Nginx.
+
+> .NET Aspire é utilizado como ferramenta de desenvolvimento e orquestração local. A infraestrutura e as políticas de segurança de produção continuam definidas pelos artefatos de deployment do projeto.
+
+O Docker Compose existente permanece a referência para a topologia containerizada
+e para produção, incluindo Nginx, redes internas, limites e hardening. O AppHost
+não é usado no deployment e não substitui nenhum arquivo Compose.
