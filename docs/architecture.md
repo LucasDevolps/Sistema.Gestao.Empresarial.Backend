@@ -393,6 +393,14 @@ e `sp_getapplock` impedem dois provisionamentos concorrentes. Organização, uni
 catálogos mínimos, funcionário, usuário, perfil integral, auditoria e Outbox são
 persistidos atomicamente; senha e hash nunca entram nos eventos ou logs de domínio.
 
+A décima terceira fatia completa os contratos de leitura necessários ao frontend:
+identidade e permissões efetivas do usuário atual, listagem administrativa de
+usuários e catálogos de organização atual, unidades hospitalares e setores. Todas
+as consultas usam somente `Guid` público, paginação limitada e escopo derivado de
+`Usuário → Funcionário → Unidade de contratação → Organização`. Dados de outro
+tenant são filtrados antes da projeção e os Controllers permanecem fail-closed por
+sessão/política e permissão explícita. Nenhum token, hash ou ID interno é exposto.
+
 ## Orquestração local com .NET Aspire
 
 O projeto `Sistema.Gestao.Empresarial.AppHost` modela exclusivamente o ambiente de

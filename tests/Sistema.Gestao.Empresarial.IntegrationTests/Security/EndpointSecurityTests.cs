@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry.Trace;
 using Sistema.Gestao.Empresarial.Api.Controllers;
 using Sistema.Gestao.Empresarial.Api.Security;
+using Sistema.Gestao.Empresarial.Application.Authorization;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.Security;
 
@@ -94,6 +95,34 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
     }
 
     [Fact]
+    public void EndpointsDeSuporteAoFrontend_DevemExigirAsPoliticasEsperadas()
+    {
+        _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        AssertPolicy(endpoints, "api/auth/me", AuthPolicies.ActiveSession);
+        AssertPolicy(
+            endpoints,
+            "api/usuarios",
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ManageUserPermissions);
+        AssertPolicy(
+            endpoints,
+            "api/organizacoes/atual",
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewEmployees);
+        AssertPolicy(
+            endpoints,
+            "api/unidades-hospitalares",
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewEmployees);
+        AssertPolicy(
+            endpoints,
+            "api/setores",
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewSectors);
+    }
+
+    [Fact]
     public void Api_NaoDeveExporEndpointsHttpDelete()
     {
         _factory.CreateClient();
@@ -106,6 +135,17 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
             .ToArray();
 
         Assert.Empty(deleteEndpoints);
+    }
+
+    private static void AssertPolicy(
+        IEnumerable<RouteEndpoint> endpoints,
+        string route,
+        string policy)
+    {
+        var endpoint = endpoints.Single(x => x.RoutePattern.RawText == route);
+        Assert.Contains(
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            authorization => authorization.Policy == policy);
     }
 }
 

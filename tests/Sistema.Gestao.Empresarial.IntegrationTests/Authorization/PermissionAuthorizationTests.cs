@@ -2,10 +2,12 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Sistema.Gestao.Empresarial.Application.Authorization;
+using Sistema.Gestao.Empresarial.Application.Identity;
 using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Infrastructure.Authorization;
+using Sistema.Gestao.Empresarial.Infrastructure.Identity;
 using Sistema.Gestao.Empresarial.Infrastructure.Observability;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.IntegrationTests.Authentication;
@@ -14,6 +16,47 @@ namespace Sistema.Gestao.Empresarial.IntegrationTests.Authorization;
 
 public sealed class PermissionAuthorizationTests
 {
+    [Fact]
+    public async Task IdentidadeAtual_DeveRetornarDadosPublicosEPermissoesEfetivas()
+    {
+        await using var fixture = await PermissionFixture.CreateAsync();
+        var user = await fixture.AddUserAsync("identidade@hospital.test");
+        var permission = await fixture.AddPermissionAsync(PermissionCodes.ViewEmployees);
+        fixture.Db.UsuariosPermissoes.Add(new UsuarioPermissao(
+            Guid.NewGuid(), user.Id, permission.Id, true, fixture.Clock.GetUtcNow()));
+        await fixture.Db.SaveChangesAsync();
+
+        var response = await fixture.Identity.GetCurrentAsync(user.Guid, CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Equal(user.Guid, response.UserGuid);
+        Assert.Equal(user.Email, response.Email);
+        Assert.NotNull(response.Employee);
+        Assert.NotNull(response.Organization);
+        Assert.NotNull(response.HiringUnit);
+        Assert.Contains(PermissionCodes.ViewEmployees, response.Permissions);
+    }
+
+    [Fact]
+    public async Task ListagemDeUsuarios_DeveRestringirAoEscopoOrganizacionalDoAdministrador()
+    {
+        await using var fixture = await PermissionFixture.CreateAsync();
+        var actor = await fixture.AddUserAsync("admin-lista@hospital.test");
+        var sameOrganization = await fixture.AddUserAsync("local@hospital.test");
+        var otherOrganization = await fixture.AddUserAsync(
+            "externo-lista@hospital.test", otherOrganization: true);
+
+        var response = await fixture.Identity.ListUsersAsync(
+            actor.Guid,
+            new IdentityListQuery(null, true, 1, 100),
+            CancellationToken.None);
+
+        Assert.Contains(response.Items, x => x.UserGuid == actor.Guid);
+        Assert.Contains(response.Items, x => x.UserGuid == sameOrganization.Guid);
+        Assert.DoesNotContain(response.Items, x => x.UserGuid == otherOrganization.Guid);
+        Assert.Equal(2, response.Total);
+    }
+
     [Fact]
     public async Task NegacaoDireta_DevePrevalecerSobrePermissaoDoPerfil()
     {
@@ -165,6 +208,7 @@ internal sealed class PermissionFixture : IAsyncDisposable
         FakePermissionCache cache,
         PermissionChecker checker,
         PermissionAdministrationService administration,
+        IdentityQueryService identity,
         ServiceProvider metricsProvider)
     {
         Db = db;
@@ -172,6 +216,7 @@ internal sealed class PermissionFixture : IAsyncDisposable
         Cache = cache;
         Checker = checker;
         Administration = administration;
+        Identity = identity;
         MetricsProvider = metricsProvider;
     }
 
@@ -180,6 +225,7 @@ internal sealed class PermissionFixture : IAsyncDisposable
     public FakePermissionCache Cache { get; }
     public PermissionChecker Checker { get; }
     public PermissionAdministrationService Administration { get; }
+    public IdentityQueryService Identity { get; }
     private ServiceProvider MetricsProvider { get; }
     private UnidadeHospitalar PrimaryUnit { get; set; } = null!;
     private UnidadeHospitalar OtherUnit { get; set; } = null!;
@@ -199,7 +245,9 @@ internal sealed class PermissionFixture : IAsyncDisposable
         var metrics = new PermissionMetrics(metricsProvider.GetRequiredService<System.Diagnostics.Metrics.IMeterFactory>());
         var checker = new PermissionChecker(db, cache, metrics, NullLogger<PermissionChecker>.Instance);
         var administration = new PermissionAdministrationService(db, checker, cache, metrics, clock);
-        var fixture = new PermissionFixture(db, clock, cache, checker, administration, metricsProvider);
+        var identity = new IdentityQueryService(db, checker, clock);
+        var fixture = new PermissionFixture(
+            db, clock, cache, checker, administration, identity, metricsProvider);
         await fixture.SeedOrganizationAsync();
         return fixture;
     }

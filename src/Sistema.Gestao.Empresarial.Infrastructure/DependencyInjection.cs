@@ -22,6 +22,10 @@ using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
 using Sistema.Gestao.Empresarial.Application.Bootstrap;
 using Sistema.Gestao.Empresarial.Infrastructure.Bootstrap;
+using Sistema.Gestao.Empresarial.Application.Identity;
+using Sistema.Gestao.Empresarial.Application.Organizations;
+using Sistema.Gestao.Empresarial.Infrastructure.Identity;
+using Sistema.Gestao.Empresarial.Infrastructure.Organizations;
 using StackExchange.Redis;
 
 namespace Sistema.Gestao.Empresarial.Infrastructure;
@@ -94,6 +98,8 @@ public static class DependencyInjection
         services.AddScoped<IPermissionAdministrationService, PermissionAdministrationService>();
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IProfessionalCatalogService, ProfessionalCatalogService>();
+        services.AddScoped<IIdentityQueryService, IdentityQueryService>();
+        services.AddScoped<IOrganizationCatalogService, OrganizationCatalogService>();
         services.AddScoped<IInitialAdminBootstrapService, InitialAdminBootstrapService>();
         services.AddScoped<IOutboxStore, OutboxStore>();
         services.AddDbContext<AppDbContext>(options =>
