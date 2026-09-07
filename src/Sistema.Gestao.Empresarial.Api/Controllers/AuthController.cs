@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Sistema.Gestao.Empresarial.Api.Security;
 using Sistema.Gestao.Empresarial.Application.Authentication;
+using Sistema.Gestao.Empresarial.Application.Identity;
 
 namespace Sistema.Gestao.Empresarial.Api.Controllers;
 
@@ -13,6 +14,7 @@ namespace Sistema.Gestao.Empresarial.Api.Controllers;
 [Route("api/auth")]
 public sealed class AuthController(
     IAuthenticationService authenticationService,
+    IIdentityQueryService identityQueries,
     IValidator<LoginRequest> loginValidator,
     IValidator<RefreshTokenRequest> refreshValidator) : ControllerBase
 {
@@ -71,6 +73,21 @@ public sealed class AuthController(
 
         await authenticationService.LogoutAsync(claims, CreateContext(), cancellationToken);
         return NoContent();
+    }
+
+    [HttpGet("me")]
+    [Authorize(Policy = AuthPolicies.ActiveSession)]
+    [ProducesResponseType<CurrentUserResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Me(CancellationToken cancellationToken)
+    {
+        if (!TryGetSessionClaims(out var claims))
+        {
+            return Unauthorized();
+        }
+
+        var response = await identityQueries.GetCurrentAsync(claims.UserGuid, cancellationToken);
+        return response is null ? Unauthorized() : Ok(response);
     }
 
     private AuthOperationContext CreateContext()

@@ -98,12 +98,18 @@ Endpoints disponíveis:
 POST /api/auth/login
 POST /api/auth/refresh
 POST /api/auth/logout
+GET  /api/auth/me
 ```
 
 Access tokens são JWTs curtos, refresh tokens são opacos e rotacionados, e somente
 hashes dos tokens são persistidos. A validade real depende da sessão SQL + Redis;
 um JWT assinado não é suficiente. O logout exige uma sessão ativa e revoga todas as
 sessões inconsistentes ainda marcadas como ativas.
+
+`GET /api/auth/me` exige sessão ativa e retorna somente a identidade pública do
+usuário, funcionário/organização/unidade de contratação quando existentes, versão
+de permissões e permissões efetivas. Senha, hashes, IDs internos e dados da sessão
+não fazem parte da resposta.
 
 Nenhum usuário ou segredo administrativo é criado automaticamente pela migration e
 não existem credenciais padrão no código ou no banco. O primeiro administrador é
@@ -134,10 +140,11 @@ autenticado para operações posteriores.
 
 ## Autorização configurável
 
-Endpoints administrativos disponíveis, ambos protegidos pela permissão
+Endpoints administrativos disponíveis, todos protegidos pela permissão
 `USUARIO_GERENCIAR_PERMISSOES`:
 
 ```text
+GET /api/usuarios?search=&active=&page=1&pageSize=50
 GET /api/usuarios/{userGuid}/permissions
 PUT /api/usuarios/{userGuid}/permissions/{permissionCode}
 ```
@@ -147,6 +154,29 @@ sobre perfis, autoalteração é bloqueada e o administrador só pode conceder u
 permissão que também possua. Mudanças incrementam a versão durável do usuário e
 instalam uma barreira no Redis antes do commit, impedindo autorização com cache
 antigo durante invalidações concorrentes.
+
+A listagem de usuários é paginada, aceita busca por nome, e-mail ou matrícula e
+retorna somente usuários vinculados à mesma organização do administrador. Usuários
+de outras organizações não são revelados.
+
+## Catálogos organizacionais para o frontend
+
+Os catálogos abaixo expõem somente identificadores públicos (`Guid`) e aplicam o
+escopo organizacional derivado do usuário autenticado:
+
+```text
+GET /api/organizacoes/atual
+GET /api/unidades-hospitalares?search=&active=&page=1&pageSize=50
+GET /api/unidades-hospitalares/{unitGuid}
+GET /api/setores?search=&active=&unitGuid=&page=1&pageSize=50
+GET /api/setores/{sectorGuid}
+```
+
+Organização e unidades exigem `FUNCIONARIO_VISUALIZAR`. Setores exigem
+`SETOR_VISUALIZAR`. Leituras por `Guid` de outra organização respondem como não
+encontradas, evitando revelar a existência de dados cross-tenant. Listagens são
+paginadas no servidor, limitadas a 100 registros por página e nunca retornam dados
+de outra organização.
 
 Antes de iniciar a API pela primeira vez, aplique migrations de forma controlada:
 
