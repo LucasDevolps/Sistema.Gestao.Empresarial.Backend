@@ -154,15 +154,22 @@ embutidas em connection strings.
 ## 5. Pré-requisitos e o que o script instala
 
 **Você precisa ter:** Windows 10/11 ou Windows Server, WSL2 com a distro `Ubuntu` e
-o ambiente de desenvolvimento Docker **no ar** (`scripts/dev-up.ps1`), .NET SDK 10
-e Node ≥ 20.19 no Windows, e o `.env` preenchido.
+o ambiente de desenvolvimento Docker **no ar** (`scripts/dev-up.ps1`), **.NET SDK
+`10.0.400`** no Windows (é o pino exato de `global.json`, `rollForward: latestPatch` —
+não basta um SDK 10.0.x qualquer; instale de `dot.net/v1/dotnet-install.ps1
+-Version 10.0.400 -InstallDir "C:\Program Files\dotnet"`), Node ≥ 20.19 (validado
+com Node 22) e o `.env` preenchido.
+
+> **Windows PowerShell 5.1** é o interpretador de referência (`powershell.exe`) — os
+> cmdlets DISM/`WebAdministration` são nativos nele. O script já força
+> `WSL_UTF8=1` (senão `wsl -l -q` volta ilegível no 5.1).
 
 **O script instala/configura (idempotente, pulável em `-DryRun`):**
 
 | Componente | Verificação | Origem |
 | --- | --- | --- |
 | Recursos do IIS (Web Server, Static Content, Default Document, HTTP Errors, Request Filtering, ISAPI, WebSockets, Management Console + Scripting) | `Get-WindowsOptionalFeature` | Windows Optional Features (mínimo necessário) |
-| ASP.NET Core Module v2 + runtime ASP.NET Core 10 | `aspnetcorev2.dll` + `shared\Microsoft.AspNetCore.App\10.*` | **.NET 10 Hosting Bundle**, download de `aka.ms`/`microsoft.com`, assinatura Authenticode Microsoft verificada; instalação silenciosa; `net stop was` / `net start w3svc`. Se o IIS acabou de ser instalado, o Hosting Bundle é (re)parado para registrar o ANCM (recomendação oficial). |
+| ASP.NET Core Module v2 + runtime ASP.NET Core 10 | runtime `shared\Microsoft.AspNetCore.App\10.*` **+** ANCM v2 registrado (`%ProgramFiles%\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` **ou** `inetsrv\aspnetcorev2.dll` — bundles atuais **não** copiam mais para `inetsrv`) | **.NET 10 Hosting Bundle**, download de `aka.ms`/`microsoft.com`, assinatura Authenticode Microsoft verificada; instalação silenciosa; `net stop was` / `net start w3svc`. Se o IIS acabou de ser instalado (ou os recursos ISAPI foram ligados agora), o Hosting Bundle é (re)parado para registrar o ANCM (recomendação oficial). |
 | URL Rewrite 2.1 | `Get-WebGlobalModule RewriteModule` | `download.microsoft.com` (oficial), assinatura verificada |
 | Application Request Routing 3.0 | `Get-WebGlobalModule ApplicationRequestRouting` | `download.microsoft.com` (oficial), assinatura verificada |
 
@@ -171,8 +178,18 @@ O proxy do ARR é habilitado a nível de servidor (`system.webServer/proxy` com
 `^(api|health)` do site do frontend encaminham para a API. Instaladores podem ser
 fornecidos offline com `-HostingBundleInstaller` / `-UrlRewriteInstaller` / `-ArrInstaller`.
 
-O firewall **não** é alterado. Nenhuma regra de entrada é criada. Como tudo escuta
-em `127.0.0.1` / `localhost`, nada fica acessível pela LAN.
+**Long paths.** O script assume `HKLM\SYSTEM\CurrentControlSet\Control\FileSystem
+\LongPathsEnabled = 1` (o `dotnet publish` e o `npm ci` geram árvores > 260 chars).
+Ligue uma vez: `Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+LongPathsEnabled 1`. O stage do `dotnet publish` foi movido para `C:\_sgepub\<hora>`
+(caminho curto) e limpo ao final.
+
+**Firewall / LAN.** O firewall **não** é alterado e nenhuma regra de entrada é
+criada. Os sites têm binding só nos loopbacks `127.0.0.1` **e** `[::1]` (IPv6 — veja
+seção 13). Requisições a qualquer outro endereço (LAN, IP público) chegam ao
+http.sys mas **não casam com nenhum site** → `HTTP 400`, nunca conteúdo. Para fechar
+a porta também no nível TCP seria preciso `netsh http add iplisten` (afeta *todos*
+os sites da máquina) ou uma regra de bloqueio de firewall — nenhum dos dois é feito.
 
 ---
 
@@ -233,9 +250,14 @@ na raiz do repositório do backend:
 10. injeta as variáveis de ambiente da API no pool (segredos fora do repositório);
 11. **deploy atômico**: `dotnet publish` em pasta temporária → valida → `app_offline.htm`
     → `robocopy /MIR` → remove `app_offline` (backup `.bak` + rollback se a cópia falhar);
-12. publica o Angular e gera o `web.config` do frontend (SPA fallback + proxy `/api`,`/health`);
-13. cria/atualiza os sites IIS (`127.0.0.1:9081` e `127.0.0.1:9080`), aplica hardening e ACL mínima;
-14. sobe os pools/sites e roda os health checks; imprime a tabela final.
+12. publica o Angular e gera o `web.config` do frontend (SPA fallback + proxy `/api`,`/health`
+    via ARR; **sem** `<serverVariables>` — a seção `allowedServerVariables` é travada
+    em escopo de servidor e num web.config de site derruba o módulo com "500 URL
+    Rewrite Module Error");
+13. cria/atualiza os sites IIS com binding duplo de loopback — `127.0.0.1:<porta>` **e**
+    `[::1]:<porta>` — aplica hardening e ACL mínima;
+14. sobe os pools/sites e roda os health checks (contra `http://localhost:<porta>`);
+    imprime a tabela final.
 
 Idempotente: rodar de novo **atualiza** os mesmos sites/pools. Nunca cria
 `...-Api-2`. Não toca em outros sites nem no `Default Web Site`.
@@ -274,15 +296,23 @@ a outros sites) e **não** mexe no Docker, no banco nem nos volumes.
 
 | Alvo | Esperado |
 | --- | --- |
-| `http://127.0.0.1:9081/health/live` | 200 |
-| `http://127.0.0.1:9081/health/ready` | 200 (SQL + Redis alcançáveis) |
+| `http://localhost:9081/health/live` | 200 |
+| `http://localhost:9081/health/ready` | 200 (SQL + Redis alcançáveis) |
 | `http://localhost:9080/` | 200, contém `app-root` |
 | `http://localhost:9080/login` | 200 (fallback SPA) |
 | `http://localhost:9080/health/ready` | 200 (proxy same-origin) |
-| `http://127.0.0.1:9081/swagger/index.html` | 404/401 (Swagger **não** exposto em Production) |
+| `http://localhost:9081/swagger/index.html` | 404/401 (Swagger **não** exposto em Production) |
 | Application Pools | `Started` |
 
 Falha em qualquer item obrigatório → `exit code != 0`.
+
+> **Sempre `localhost`, não `127.0.0.1`.** Num site com binding de **IP específico**,
+> o http.sys valida o `Host` header contra o binding e devolve `HTTP 400 – Invalid
+> Hostname` para `Host: 127.0.0.1`. Como `localhost` resolve para `::1` **antes** de
+> `127.0.0.1` no Windows, os sites são publicados com **dois** bindings de loopback
+> (`127.0.0.1:<porta>` e `[::1]:<porta>`); sem o binding IPv6, navegador/curl batem
+> em `::1`, o http.sys não acha site e responde 400 (o cliente não faz fallback).
+> Ambos os endereços são não-roteáveis → continua sem exposição na LAN.
 
 ---
 

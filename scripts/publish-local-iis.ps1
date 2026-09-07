@@ -109,6 +109,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# wsl.exe emite texto em UTF-16LE por padrão; no Windows PowerShell 5.1 isso vira
+# mojibake ("U b u n t u") ao capturar a saída. WSL_UTF8=1 força UTF-8 e cobre
+# tanto 'wsl -l -q' quanto as mensagens de erro do próprio wsl.exe.
+$env:WSL_UTF8 = '1'
+
 # ===========================================================================
 #  Constantes
 # ===========================================================================
@@ -206,12 +211,24 @@ function Import-WebAdministration {
 
 function Invoke-Wsl {
     param([string]$Bash, [switch]$AllowFail)
-    $out = & wsl.exe -d $WslDistribution -- bash -lc $Bash 2>&1
-    $code = $LASTEXITCODE
-    if ($code -ne 0 -and -not $AllowFail) {
-        throw "Comando WSL falhou (exit $code): $Bash`n$($out -join "`n")"
+    # 'docker compose' (e outros) escrevem progresso em stderr. Com 2>&1 e
+    # $ErrorActionPreference='Stop', o Windows PowerShell 5.1 promove a 1ª linha
+    # de stderr de um comando nativo a erro TERMINANTE (NativeCommandError) — isso
+    # dispararia antes mesmo de checarmos -AllowFail. Localmente usamos 'Continue'
+    # para que stderr seja apenas texto; sucesso/falha vem do exit code.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $out = & wsl.exe -d $WslDistribution -- bash -lc $Bash 2>&1
+        $code = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
     }
-    return [pscustomobject]@{ Code = $code; Output = ($out -join "`n") }
+    $text = (@($out) | ForEach-Object { $_.ToString() }) -join "`n"
+    if ($code -ne 0 -and -not $AllowFail) {
+        throw "Comando WSL falhou (exit $code): $Bash`n$text"
+    }
+    return [pscustomobject]@{ Code = $code; Output = $text }
 }
 
 function ConvertTo-WslPath {
@@ -340,12 +357,19 @@ function Test-DockerReady {
     Write-Log -Level OK -Message "Docker Engine $($d.Output.Trim()) ativo no WSL."
     $repoWsl = ConvertTo-WslPath $script:BackendRoot
     $script:BackendRootWsl = $repoWsl
-    $ps = Invoke-Wsl "cd '$repoWsl' && docker compose ps --format '{{.Service}} {{.State}} {{.Health}}'" -AllowFail
-    Write-Log -Level INFO -Message "Estado atual do compose:`n$($ps.Output)"
-    foreach ($svc in 'sqlserver', 'redis', 'rabbitmq', 'otel-collector') {
-        if ($ps.Output -notmatch "(?m)^$svc\s+running") {
-            throw "Serviço de infraestrutura '$svc' não está 'running' no Docker. Suba o ambiente de dev (scripts/dev-up.ps1) e rode novamente."
-        }
+    # 'wsl.exe' pode bouncear os containers (~15s) neste build; toleramos alguns
+    # ciclos antes de considerar a infra fora do ar.
+    $pending = @('sqlserver', 'redis', 'rabbitmq', 'otel-collector')
+    foreach ($try in 1..6) {
+        $ps = Invoke-Wsl "cd '$repoWsl' && docker compose ps --format '{{.Service}} {{.State}} {{.Health}}'" -AllowFail
+        Write-Log -Level INFO -Message "Estado do compose (tentativa $try):`n$($ps.Output)"
+        $pending = @($pending | Where-Object { $ps.Output -notmatch "(?m)^$_\s+running" })
+        if ($pending.Count -eq 0) { break }
+        Write-Log -Level WARN -Message "Aguardando serviço(s) '$($pending -join ', ')' voltarem a 'running' (8s)..."
+        Start-Sleep -Seconds 8
+    }
+    if ($pending.Count -ne 0) {
+        throw "Serviço(s) de infraestrutura '$($pending -join ', ')' não estão 'running' no Docker. Suba o ambiente de dev (scripts/dev-up.ps1) e rode novamente."
     }
     Write-Log -Level OK -Message "Infraestrutura de desenvolvimento (SQL/Redis/RabbitMQ/OTEL) está de pé."
 }
@@ -365,9 +389,18 @@ function Start-IisInfrastructurePorts {
     "up -d --no-deps sqlserver redis rabbitmq otel-collector"
 
     Invoke-OrDryRun "Aplicar overlay: $composeCmd" {
-        $r = Invoke-Wsl $composeCmd -AllowFail
-        Write-Log -Level INFO -Message $r.Output
-        if ($r.Code -ne 0) { throw "Falha ao aplicar docker-compose.iis.yml (exit $($r.Code))." }
+        # 'docker compose up' pode retornar não-zero se um re-init do WSL bouncear
+        # a distro no meio da recriação (a rede/containers ficam parcialmente
+        # aplicados). É idempotente: repetir conclui a operação.
+        $applied = $false
+        foreach ($try in 1..4) {
+            $r = Invoke-Wsl $composeCmd -AllowFail
+            Write-Log -Level INFO -Message "docker compose up (tentativa $try) -> exit $($r.Code):`n$($r.Output)"
+            if ($r.Code -eq 0) { $applied = $true; break }
+            Write-Log -Level WARN -Message "Overlay não aplicou por completo (provável bounce do WSL). Nova tentativa em 10s..."
+            Start-Sleep -Seconds 10
+        }
+        if (-not $applied) { throw "Falha ao aplicar docker-compose.iis.yml após múltiplas tentativas." }
     }
     if ($DryRun) { return }
 
@@ -394,10 +427,23 @@ function Start-IisInfrastructurePorts {
 function Test-DatabaseSchema {
     Write-Step "4/13  Validar banco (MESMO banco do dev; NÃO cria, NÃO migra)"
     $repoWsl = $script:BackendRootWsl
-    $r = Invoke-Wsl "cd '$repoWsl' && bash ./scripts/_db-has-schema.sh" -AllowFail
-    Write-Log -Level INFO -Message "scripts/_db-has-schema.sh -> exit $($r.Code): $(Protect-Secret $r.Output)"
+    # Cada 'wsl.exe' pode disparar um re-init do systemd (bounce gracioso dos
+    # containers ~15s) neste build do WSL. O check é somente-leitura, então
+    # repetimos algumas vezes: só é falha real se NUNCA obtivermos schema.
+    $r = $null
+    foreach ($try in 1..6) {
+        $r = Invoke-Wsl "cd '$repoWsl' && bash ./scripts/_db-has-schema.sh" -AllowFail
+        Write-Log -Level INFO -Message "scripts/_db-has-schema.sh (tentativa $try) -> exit $($r.Code): $(Protect-Secret $r.Output)"
+        if ($r.Code -eq 0) { break }
+        if ($r.Output -match 'cannot be autostarted|shutdown or startup|Login failed|not currently available|error: 4060|Msg (911|18456|4060|904)') {
+            Write-Log -Level WARN -Message "SQL Server ainda inicializando (bounce do WSL). Nova tentativa em 8s..."
+            Start-Sleep -Seconds 8
+            continue
+        }
+        break   # erro que não parece transitório
+    }
     if ($r.Code -ne 0) {
-        throw "O banco 'SistemaGestaoEmpresarial' ainda não tem schema aplicado. Aplique as migrations pelo fluxo existente (scripts/apply-migrations-docker.sh ou dev-up.ps1) e rode novamente. Este script nunca cria/migra/recria o banco."
+        throw "O banco 'SistemaGestaoEmpresarial' ainda não tem schema aplicado (ou o SQL Server não estabilizou). Aplique as migrations pelo fluxo existente (scripts/apply-migrations-docker.sh ou dev-up.ps1) e rode novamente. Este script nunca cria/migra/recria o banco."
     }
     Write-Log -Level OK -Message "Banco existente com __EFMigrationsHistory populada. Nenhuma migration será executada."
 }
@@ -483,12 +529,21 @@ function Install-MsiOrExe {
 }
 
 function Test-AspNetCoreModule {
-    $dll = Join-Path $env:windir 'System32\inetsrv\aspnetcorev2.dll'
-    if (-not (Test-Path $dll)) { return $false }
     $shared = 'C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App'
     if (-not (Test-Path $shared)) { return $false }
     $net10 = Get-ChildItem $shared -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '10.*' }
-    return [bool]$net10
+    if (-not $net10) { return $false }
+    # ANCM v2: Hosting Bundles atuais NÃO copiam mais o shim para
+    # %windir%\System32\inetsrv — registram o módulo apontando para
+    # %ProgramFiles%\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll. Aceitamos
+    # qualquer um dos dois layouts, e por fim o registro no applicationHost.config.
+    $dllModern = Join-Path $env:ProgramFiles 'IIS\Asp.Net Core Module\V2\aspnetcorev2.dll'
+    $dllLegacy = Join-Path $env:windir 'System32\inetsrv\aspnetcorev2.dll'
+    if ((Test-Path $dllModern) -or (Test-Path $dllLegacy)) { return $true }
+    try {
+        $cfg = Get-Content (Join-Path $env:windir 'System32\inetsrv\config\applicationHost.config') -Raw -ErrorAction Stop
+        return ($cfg -match 'name="AspNetCoreModuleV2"\s+image=')
+    } catch { return $false }
 }
 
 function Install-AspNetCoreHostingBundle {
@@ -550,8 +605,8 @@ function Install-ReverseProxyModules {
 #  Build + Publish
 # ===========================================================================
 function Resolve-ApiProject {
-    $candidates = Get-ChildItem -Path (Join-Path $script:BackendRoot 'src') -Recurse -Filter '*.Api.csproj' -ErrorAction SilentlyContinue
-    if (-not $candidates) { throw "Projeto da API (*.Api.csproj) não encontrado em src/." }
+    $candidates = @(Get-ChildItem -Path (Join-Path $script:BackendRoot 'src') -Recurse -Filter '*.Api.csproj' -ErrorAction SilentlyContinue)
+    if ($candidates.Count -eq 0) { throw "Projeto da API (*.Api.csproj) não encontrado em src/." }
     if ($candidates.Count -gt 1) { Write-Log -Level WARN -Message "Vários *.Api.csproj; usando o primeiro: $($candidates[0].FullName)" }
     return $candidates[0].FullName
 }
@@ -563,14 +618,19 @@ function Invoke-BackendBuild {
     $sln = Join-Path $script:BackendRoot 'Sistema.Gestao.Empresarial.sln'
     if ($DryRun) { Write-Log -Level DRY -Message "[dry-run] dotnet restore/build/test/publish"; return $api }
 
+    # IMPORTANTE: o stdout do 'dotnet' precisa ir para o console/log, mas NÃO pode
+    # virar valor de retorno da função — senão '$api = Invoke-BackendBuild' captura
+    # todas as linhas do build/test junto do caminho do .csproj, e o
+    # 'Publish-Backend' recebe um caminho de projeto inválido (MSB1009 / MAX_PATH).
+    # '| Write-Host' consome a saída (fora do pipeline de retorno) e ainda a imprime.
     Push-Location $script:BackendRoot
     try {
-        & dotnet restore $sln --locked-mode; if ($LASTEXITCODE) { throw "dotnet restore falhou." }
-        & dotnet build $sln -c Release --no-restore; if ($LASTEXITCODE) { throw "dotnet build falhou." }
+        & dotnet restore $sln --locked-mode | Write-Host; if ($LASTEXITCODE) { throw "dotnet restore falhou." }
+        & dotnet build $sln -c Release --no-restore | Write-Host; if ($LASTEXITCODE) { throw "dotnet build falhou." }
         if ($SkipTests) {
             Write-Log -Level WARN -Message "-SkipTests: pulando dotnet test."
         } else {
-            & dotnet test $sln -c Release --no-build --nologo
+            & dotnet test $sln -c Release --no-build --nologo | Write-Host
             if ($LASTEXITCODE) { throw "dotnet test falhou. Publicação abortada." }
         }
     } finally { Pop-Location }
@@ -581,8 +641,14 @@ function Publish-Backend {
     param([string]$ApiProject)
     Write-Step "9/13  Publicar API (deploy atômico com app_offline + rollback)"
     $target = Join-Path $IisRoot 'Api'
-    $stage = Join-Path $env:TEMP ("sge-api-publish-{0}" -f (Get-Date -Format 'yyyyMMddHHmmss'))
+    # Área de stage com caminho CURTO: 'dotnet publish' gera árvores profundas
+    # (runtimes\, wwwroot\, assets de pacotes) que estouram o MAX_PATH (260) se a
+    # raiz for longa como %LOCALAPPDATA%\Temp. Fica ao lado do destino, no mesmo
+    # volume (robocopy sem cópia entre discos), e é limpa ao final.
+    $stage = Join-Path (Split-Path -Qualifier $IisRoot) ('\_sgepub\{0}' -f (Get-Date -Format 'HHmmss'))
     $backup = "$target.bak"
+    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force -ErrorAction SilentlyContinue }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
     if ($DryRun) {
         Write-Log -Level DRY -Message "[dry-run] dotnet publish '$ApiProject' -c Release -o '$stage'"
@@ -726,12 +792,14 @@ function Write-FrontendWebConfig {
     </staticContent>
     <rewrite>
       <rules>
+        <!-- Proxy same-origin de /api e /health para o site da API (ARR).
+             NÃO usa <serverVariables>: a seção system.webServer/rewrite/allowedServerVariables
+             é travada em escopo de servidor e, referenciada num web.config de site,
+             faz o módulo retornar "500 URL Rewrite Module Error". O ARR já encaminha
+             X-Forwarded-For; o esquema é http em todo o caminho local. -->
         <rule name="SGE API proxy" stopProcessing="true">
           <match url="^(api|health)(/.*)?$" />
           <action type="Rewrite" url="http://127.0.0.1:$BackendPort/{R:0}" appendQueryString="true" logRewrittenUrl="false" />
-          <serverVariables>
-            <set name="HTTP_X_FORWARDED_PROTO" value="http" />
-          </serverVariables>
         </rule>
         <rule name="SGE SPA fallback" stopProcessing="true">
           <match url=".*" />
@@ -743,9 +811,6 @@ function Write-FrontendWebConfig {
           <action type="Rewrite" url="/index.html" />
         </rule>
       </rules>
-      <allowedServerVariables>
-        <add name="HTTP_X_FORWARDED_PROTO" />
-      </allowedServerVariables>
     </rewrite>
     <httpErrors errorMode="Custom" existingResponse="PassThrough" />
   </system.webServer>
@@ -831,28 +896,50 @@ function Set-DeploymentAcl {
     Write-Log -Level OK -Message "ACL mínima aplicada em '$Folder' para '$identity' (RX; Modify só em \logs)."
 }
 
+function Set-SiteLoopbackBindings {
+    # Mantém EXATAMENTE dois bindings http: 127.0.0.1:<porta> e [::1]:<porta>.
+    # O binding IPv6 é obrigatório porque 'localhost' resolve para ::1 ANTES de
+    # 127.0.0.1 no Windows; sem ele, navegador/curl batem em ::1, o http.sys não
+    # acha site para esse IP e responde 400 (e o cliente não faz fallback). Ambos
+    # os endereços são de loopback (não roteáveis) => nada fica exposto na LAN.
+    # Usa appcmd: 'New-WebBinding -IPAddress ::1' grava a string sem colchetes e
+    # o site não inicia.
+    param([string]$Name, [int]$Port)
+    $appcmd = Join-Path $env:windir 'system32\inetsrv\appcmd.exe'
+    $want = @("127.0.0.1:${Port}:", "[::1]:${Port}:")
+    $current = @()
+    foreach ($tok in ((& $appcmd list site $Name /text:bindings) -split ',')) {
+        if ($tok -match '^\s*http/(.+?)\s*$') { $current += $Matches[1] }
+    }
+    foreach ($b in $current) {
+        if ($b -notin $want) {
+            & $appcmd set site $Name "/-bindings.[protocol='http',bindingInformation='$b']" | Out-Null
+            Write-Log -Level INFO -Message "Site '$Name': binding http/$b removido (fora do conjunto loopback)."
+        }
+    }
+    foreach ($b in $want) {
+        if ($b -notin $current) {
+            & $appcmd set site $Name "/+bindings.[protocol='http',bindingInformation='$b']" | Out-Null
+            Write-Log -Level OK -Message "Site '$Name': binding http/$b adicionado."
+        }
+    }
+}
+
 function New-OrUpdateSite {
     param([string]$Name, [string]$PhysicalPath, [int]$Port, [string]$Pool)
-    $bindInfo = "127.0.0.1:${Port}:"
-    if ($DryRun) { Write-Log -Level DRY -Message "[dry-run] Site '$Name' -> $PhysicalPath  binding http/$bindInfo  pool '$Pool'"; return }
+    if ($DryRun) { Write-Log -Level DRY -Message "[dry-run] Site '$Name' -> $PhysicalPath  bindings http/127.0.0.1:$Port + http/[::1]:$Port  pool '$Pool'"; return }
     New-Item -ItemType Directory -Force -Path $PhysicalPath | Out-Null
-    $site = Get-Website -Name $Name -ErrorAction SilentlyContinue
-    if (-not $site) {
+    if (-not (Get-Website -Name $Name -ErrorAction SilentlyContinue)) {
         New-Website -Name $Name -PhysicalPath $PhysicalPath -ApplicationPool $Pool `
             -IPAddress '127.0.0.1' -Port $Port -Force | Out-Null
-        Write-Log -Level OK -Message "Site '$Name' criado (http://127.0.0.1:$Port)."
+        Write-Log -Level OK -Message "Site '$Name' criado."
     } else {
         Set-ItemProperty "IIS:\Sites\$Name" -Name physicalPath -Value $PhysicalPath
         Set-ItemProperty "IIS:\Sites\$Name" -Name applicationPool -Value $Pool
-        $hasBinding = $site.Bindings.Collection | Where-Object { $_.bindingInformation -eq $bindInfo -and $_.protocol -eq 'http' }
-        if (-not $hasBinding) {
-            Get-WebBinding -Name $Name | Where-Object { $_.protocol -eq 'http' } | ForEach-Object {
-                Remove-WebBinding -Name $Name -BindingInformation $_.bindingInformation -Protocol http -ErrorAction SilentlyContinue
-            }
-            New-WebBinding -Name $Name -Protocol http -IPAddress '127.0.0.1' -Port $Port -HostHeader ''
-        }
-        Write-Log -Level OK -Message "Site '$Name' atualizado (http://127.0.0.1:$Port)."
+        Write-Log -Level OK -Message "Site '$Name' atualizado."
     }
+    Set-SiteLoopbackBindings -Name $Name -Port $Port
+    Write-Log -Level OK -Message "Site '$Name' escutando em http://localhost:$Port (127.0.0.1 + [::1])."
 }
 
 function Set-ApiSiteHardening {
@@ -902,13 +989,16 @@ function Test-Deployment {
         else { Write-Log -Level OK -Message "AppPool '$pool' Started." }
     }
 
-    $ok = (Test-HttpOk "http://127.0.0.1:$BackendPort/health/live") -and $ok
-    $ok = (Test-HttpOk "http://127.0.0.1:$BackendPort/health/ready") -and $ok
+    # 'localhost' (não 127.0.0.1): num site com binding de IP específico o http.sys
+    # valida o Host header e devolve 400 para 'Host: 127.0.0.1'. O binding [::1]
+    # garante que 'localhost' (que resolve para ::1 primeiro) funcione.
+    $ok = (Test-HttpOk "http://localhost:$BackendPort/health/live") -and $ok
+    $ok = (Test-HttpOk "http://localhost:$BackendPort/health/ready") -and $ok
     $ok = (Test-HttpOk "http://localhost:$FrontendPort/" -MustContain 'app-root') -and $ok
     $ok = (Test-HttpOk "http://localhost:$FrontendPort/login" -MustContain 'app-root') -and $ok   # SPA fallback
     $ok = (Test-HttpOk "http://localhost:$FrontendPort/health/ready") -and $ok                    # proxy same-origin
     # Swagger NÃO deve responder em Production:
-    if (Test-HttpOk "http://127.0.0.1:$BackendPort/swagger/index.html" -Accept @(404, 401)) {
+    if (Test-HttpOk "http://localhost:$BackendPort/swagger/index.html" -Accept @(404, 401)) {
         Write-Log -Level OK -Message "Swagger não exposto (Production)."
     } else {
         Write-Log -Level WARN -Message "Swagger respondeu em /swagger — verifique Swagger:Enabled/ambiente."
@@ -1016,7 +1106,7 @@ function Invoke-Status {
     }
     Write-Host ''
     try {
-        $live = Invoke-WebRequest "http://127.0.0.1:$BackendPort/health/live" -UseBasicParsing -TimeoutSec 8
+        $live = Invoke-WebRequest "http://localhost:$BackendPort/health/live" -UseBasicParsing -TimeoutSec 8
         Write-Host "  API /health/live -> $([int]$live.StatusCode)"
     } catch { Write-Host "  API /health/live -> indisponível" }
 }
