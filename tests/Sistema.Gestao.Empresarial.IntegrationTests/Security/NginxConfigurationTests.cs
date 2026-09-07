@@ -56,6 +56,65 @@ public sealed class NginxConfigurationTests
     }
 
     [Fact]
+    public void ComposeLocal_DevePublicarNginxEDashboardSomenteEmLoopback()
+    {
+        var root = FindRepositoryRoot();
+        var developmentOverride = File.ReadAllText(Path.Combine(root, "docker-compose.override.yml")).ReplaceLineEndings("\n");
+        var nginx = Between(developmentOverride, "\n  nginx:\n", "\n  otel-collector:\n");
+        var dashboard = Between(developmentOverride, "\n  aspire-dashboard:\n", "\nnetworks:\n");
+
+        Assert.Equal(
+            ["127.0.0.1:${SGE_HTTP_PORT:-8080}:8080", "127.0.0.1:${SGE_HTTPS_PORT:-8443}:8443"],
+            PublishedPorts(nginx));
+        // A lista completa impede publicação adicional de qualquer listener OTLP.
+        Assert.Equal(["127.0.0.1:18888:18888"], PublishedPorts(dashboard));
+    }
+
+    [Fact]
+    public void Aspire_DeveExigirAutenticacaoNaUiENaIngestao()
+    {
+        var root = FindRepositoryRoot();
+        var developmentOverride = File.ReadAllText(Path.Combine(root, "docker-compose.override.yml")).ReplaceLineEndings("\n");
+        var collector = Between(developmentOverride, "\n  otel-collector:\n", "\n  aspire-dashboard:\n");
+        var dashboard = Between(developmentOverride, "\n  aspire-dashboard:\n", "\nnetworks:\n");
+        var exporter = File.ReadAllText(Path.Combine(root, "deploy", "otel-collector-aspire.yml"));
+
+        Assert.Contains("DASHBOARD__FRONTEND__AUTHMODE: BrowserToken", dashboard, StringComparison.Ordinal);
+        Assert.Contains("DASHBOARD__OTLP__AUTHMODE: ApiKey", dashboard, StringComparison.Ordinal);
+        Assert.Contains("DASHBOARD__OTLP__PRIMARYAPIKEY: ${SGE_ASPIRE_OTLP_API_KEY:?", dashboard, StringComparison.Ordinal);
+        Assert.Contains("SGE_ASPIRE_OTLP_API_KEY: ${SGE_ASPIRE_OTLP_API_KEY:?", collector, StringComparison.Ordinal);
+        Assert.Contains("x-otlp-api-key: ${env:SGE_ASPIRE_OTLP_API_KEY}", exporter, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("docker-compose.yml")]
+    [InlineData("docker-compose.production.yml")]
+    [InlineData("docker-compose.ci.yml")]
+    public void ComposeBaseProducaoECi_NaoDevemIncluirDashboardLocal(string fileName)
+    {
+        var compose = File.ReadAllText(Path.Combine(FindRepositoryRoot(), fileName));
+
+        Assert.DoesNotContain("aspire-dashboard", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("otel-collector-aspire", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("SGE_ASPIRE_OTLP_API_KEY", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("dashboard-access", compose, StringComparison.Ordinal);
+        Assert.DoesNotContain("docker-compose.override.yml", compose, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(".gitignore")]
+    [InlineData(".dockerignore")]
+    public void CredenciaisLocais_DevemSerExcluidasDoGitEDoContextoDocker(string fileName)
+    {
+        var rules = File.ReadAllLines(Path.Combine(FindRepositoryRoot(), fileName));
+
+        Assert.Contains(".env", rules);
+        Assert.Contains(".env.*", rules);
+        Assert.Contains("!.env.example", rules);
+        Assert.Contains("CREDENCIAIS-DEV-LOCAL.md", rules);
+    }
+
+    [Fact]
     public void Ci_DeveTestarProxyComHostPermitidoSemExporHealthChecksDaAplicacao()
     {
         var root = FindRepositoryRoot();
@@ -65,6 +124,20 @@ public sealed class NginxConfigurationTests
         Assert.Contains("https://127.0.0.1:8443/nginx-health", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("https://127.0.0.1:8443/health/live", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("https://127.0.0.1:8443/health/ready", workflow, StringComparison.Ordinal);
+    }
+
+    private static string[] PublishedPorts(string serviceSection)
+    {
+        var lines = serviceSection.Split('\n');
+        var portsIndex = Array.IndexOf(lines, "    ports:");
+        Assert.True(portsIndex >= 0, "A seção do serviço deve declarar suas portas publicadas.");
+
+        return lines.Skip(portsIndex + 1)
+            .TakeWhile(line => string.IsNullOrWhiteSpace(line) || line.StartsWith("      ", StringComparison.Ordinal))
+            .Select(line => line.Trim())
+            .Where(line => line.Length > 0 && !line.StartsWith('#'))
+            .Select(line => line.TrimStart('-', ' ').Trim('"', '\''))
+            .ToArray();
     }
 
     private static string Between(string value, string start, string end)

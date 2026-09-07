@@ -5,3 +5,8 @@
 .idea
 TestResults
 .env
+.env.*
+!.env.example
+
+# Credenciais locais não devem entrar em imagens ou caches de build.
+CREDENCIAIS-DEV-LOCAL.md

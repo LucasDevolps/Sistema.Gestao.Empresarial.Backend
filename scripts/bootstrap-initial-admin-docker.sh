@@ -41,8 +41,18 @@ if [[ ! -f "${password_file}" ]]; then
   exit 1
 fi
 
+# A rede SGE_DOCKER_NETWORK é interna (sem egress). O restore do NuGet precisa de
+# saída para a internet, então anexamos também uma rede efêmera com egress.
+egress_network="sge-bootstrap-egress-$$"
+docker network create "${egress_network}" >/dev/null
+cleanup() {
+  docker network rm "${egress_network}" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
 docker run --rm \
   --network "${SGE_DOCKER_NETWORK:-sge-network}" \
+  --network "${egress_network}" \
   --volume "${project_root}:/source:ro" \
   --volume "${password_file}:/run/secrets/initial-admin-password:ro" \
   --workdir /workspace \
@@ -63,4 +73,4 @@ docker run --rm \
   --memory 768m \
   --cpus 1.5 \
   mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c \
-  bash -lc "tar --exclude='bin' --exclude='obj' -C /source -cf - . | tar -C /workspace -xf - && dotnet restore src/Sistema.Gestao.Empresarial.Bootstrap/Sistema.Gestao.Empresarial.Bootstrap.csproj --locked-mode && dotnet run --project src/Sistema.Gestao.Empresarial.Bootstrap/Sistema.Gestao.Empresarial.Bootstrap.csproj --no-restore --configuration Release"
+  bash -euo pipefail -c "tar --exclude='bin' --exclude='obj' --exclude='.git' --exclude='.env' --exclude='.env.*' --exclude='CREDENCIAIS-DEV-LOCAL.md' -C /source -cf - . | tar --no-same-owner --no-same-permissions -C /workspace -xf - && dotnet restore src/Sistema.Gestao.Empresarial.Bootstrap/Sistema.Gestao.Empresarial.Bootstrap.csproj --locked-mode && dotnet run --project src/Sistema.Gestao.Empresarial.Bootstrap/Sistema.Gestao.Empresarial.Bootstrap.csproj --no-restore --configuration Release"

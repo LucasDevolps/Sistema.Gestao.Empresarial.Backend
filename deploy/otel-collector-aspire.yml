@@ -1,0 +1,19 @@
+# Complemento local: mesclado após otel-collector-config.yml, sem duplicar
+# receivers/processors. Produção e CI explícito continuam usando somente a base.
+exporters:
+  otlp_grpc/aspire:
+    endpoint: aspire-dashboard:18889
+    tls:
+      # h2c somente na rede Docker interna; autenticação por API key permanece.
+      insecure: true
+    headers:
+      x-otlp-api-key: ${env:SGE_ASPIRE_OTLP_API_KEY}
+
+service:
+  pipelines:
+    traces:
+      exporters: [otlp_grpc/aspire]
+    metrics:
+      exporters: [otlp_grpc/aspire]
+    logs:
+      exporters: [otlp_grpc/aspire]

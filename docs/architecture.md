@@ -67,8 +67,11 @@ Worker. Domain não referencia EF Core, Redis, RabbitMQ ou ASP.NET Core.
 API e Worker serão imagens multi-stage, executadas como usuário não root, sem
 `container_name`, sem estado necessário em memória local e com graceful shutdown.
 O Compose local possui Nginx com TLS na borda, SQL Server, Redis persistente (AOF),
-RabbitMQ com management somente no override de desenvolvimento, Collector OTLP,
-named volumes, health checks e dependências condicionadas à saúde.
+RabbitMQ sem publicar management, Collector OTLP e Aspire Dashboard standalone
+no override de desenvolvimento, named volumes, health checks e dependências
+condicionadas à saúde. API/Worker enviam ao Collector, que encaminha os três sinais
+ao Dashboard com API key. A UI usa browser token e publica só em `127.0.0.1:18888`;
+Nginx local publica só em `127.0.0.1:8080/8443`. Produção não carrega esse override.
 Liveness mede o processo; readiness mede SQL, Redis e RabbitMQ conforme a função do
 serviço. Migrations serão uma etapa controlada, nunca executadas concorrentemente
 por todas as réplicas em produção.

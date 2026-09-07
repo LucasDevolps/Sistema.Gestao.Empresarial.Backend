@@ -34,10 +34,12 @@ dotnet test
 ```
 
 Para o ambiente local containerizado, copie `.env.example` para `.env`, substitua
-todos os valores `CHANGE_ME` por segredos locais fortes e execute:
+todos os valores `CHANGE_ME` por segredos locais fortes, preencha
+`SGE_ASPIRE_OTLP_API_KEY` com 32 bytes aleatórios (por exemplo, gerados com
+`openssl rand -hex 32`) e execute:
 
 ```powershell
-docker compose up --build
+docker compose up -d --build
 ```
 
 O Nginx é a única entrada pública da API: `http://localhost:8080` redireciona para
@@ -46,7 +48,8 @@ confiança explícita do cliente; em qualquer ambiente compartilhado, desabilite
 `SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE` e monte um certificado emitido por uma
 CA confiável. Swagger fica em `/swagger` apenas no ambiente de desenvolvimento.
 SQL Server, Redis, RabbitMQ Management e OTLP não são publicados nem mesmo pelo
-override local. O único health check público no Nginx é `/nginx-health`;
+override local. Nginx também publica somente em `127.0.0.1`, nas portas 8080/8443.
+O único health check público no Nginx é `/nginx-health`;
 `/health/ready` permanece acessível apenas na rede interna para o orquestrador.
 
 Quando o Docker estiver disponível somente no WSL:
@@ -54,6 +57,29 @@ Quando o Docker estiver disponível somente no WSL:
 ```powershell
 wsl -d Ubuntu -- bash -lc 'cd /mnt/c/caminho/do/repositorio && docker compose up -d --build --wait'
 ```
+
+Para iniciar também o frontend irmão no Windows, use PowerShell 7:
+
+```powershell
+pwsh ./scripts/dev-up.ps1
+pwsh ./scripts/dev-up.ps1 -SkipFrontend
+pwsh ./scripts/dev-down.ps1
+```
+
+Os scripts derivam os diretórios a partir do repositório e usam Docker Engine na
+distribuição WSL `Ubuntu` (ajustável por `-Distro`). O frontend escuta somente em
+`127.0.0.1:4200`. O script de subida verifica o schema inicial antes de iniciar a
+aplicação; migrations posteriores continuam sendo aplicadas pelo job explícito.
+`-Bootstrap` executa o provisionamento administrativo já documentado. A parada
+preserva volumes; `-Down -Volumes` exige confirmação explícita para apagar dados.
+A sessão keepalive mantém a distribuição ativa; `-Full` a encerra. O guardião
+opcional `scripts/wsl-keepalive-guardian.ps1` só deve ser iniciado quando necessário.
+
+Não abra bindings `0.0.0.0`, regras de firewall ou portproxy para contornar problemas
+de localhost. Verifique o Docker na distribuição e o encaminhamento de localhost
+[documentado pelo WSL](https://learn.microsoft.com/en-us/windows/wsl/wsl-config).
+`.env`, variantes locais e `CREDENCIAIS-DEV-LOCAL.md` ficam fora do Git e do contexto
+de build Docker; o arquivo da senha de bootstrap deve continuar fora do repositório.
 
 Os testes rápidos não exigem infraestrutura. A suíte concorrente real é habilitada
 explicitamente por `SGE_REAL_INFRASTRUCTURE_TESTS=true` e recebe conexões pelas
@@ -193,8 +219,8 @@ wsl bash ./scripts/apply-migrations-docker.sh
 ```
 
 Não execute migration automaticamente em cada réplica. Em deploy, use um job único
-e controlado. O `docker-compose.override.yml` publica somente o Nginx para
-conveniência local; as portas administrativas e de dados continuam privadas.
+e controlado. O `docker-compose.override.yml` publica o Nginx e a UI administrativa
+do Aspire em `127.0.0.1:18888`; as portas de dados e OTLP continuam privadas.
 
 ## Auditoria HTTP
 
@@ -300,13 +326,70 @@ Nenhuma mensagem, tentativa ou auditoria é fisicamente apagada. Os testes
 `RealInfrastructure` exercitam concorrência e atomicidade usando SQL Server, Redis
 e RabbitMQ reais.
 
+## Aspire Dashboard no Docker Compose
+
+`docker compose up -d --build` inicia o Dashboard standalone automaticamente pelo
+`docker-compose.override.yml`. Acesse `http://localhost:18888` e obtenha o browser
+token gerado a cada inicialização com:
+
+```bash
+docker compose logs aspire-dashboard
+```
+
+Não compartilhe os logs de inicialização nem versione o token. A UI exige
+`BrowserToken`; a chave `SGE_ASPIRE_OTLP_API_KEY` é exclusivamente para ingestão,
+não é o token de login. Guarde-a no `.env` ignorado pelo Git. O Compose recusa
+valor ausente/vazio. `docker compose config --quiet` valida sem imprimir segredos;
+a saída completa de `docker compose config` contém os valores interpolados.
+
+```text
+API / Worker → OTLP/gRPC → otel-collector:4317 → aspire-dashboard:18889
+```
+
+O Collector carrega `deploy/otel-collector-config.yml` e mescla somente o exporter
+e as listas de exporters de `deploy/otel-collector-aspire.yml`. Traces, métricas e
+logs usam o header `x-otlp-api-key`, interpolado do ambiente pelo Collector. O
+transporte HTTP/gRPC sem TLS fica restrito à rede Docker interna `default`; a API
+e o Worker mantêm endpoint, instrumentação e sampling existentes. O `debug` em
+`basic` continua apenas no fluxo base/produção/CI para diagnóstico por contagens;
+no fluxo local o Aspire o substitui, evitando saída contínua duplicada do Collector.
+
+A imagem oficial `13.5.2` (compatível com o AppHost `13.5.3`, cuja tag de container
+não estava publicada) está fixada também por digest. Executa como usuário não root,
+com filesystem somente leitura, `/tmp` em memória e limites de recursos. A UI
+publica somente `127.0.0.1:18888`; nenhuma porta OTLP é publicada. A rede exclusiva
+`dashboard-access` permite o NAT dessa porta, indisponível em bridges marcadas
+`internal: true`. Só o Dashboard participa dela; não há conexão à `edge`,
+`api-proxy`, Nginx ou socket Docker. A imagem distroless não contém cliente HTTP
+para executar healthcheck: usa-se ordem de startup e fila/retry do exporter.
+
+Para produção, selecione explicitamente os arquivos abaixo (sem o override local):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+```
+
+Esse fluxo e o CI com `docker-compose.ci.yml` não incluem Dashboard, rede de acesso,
+chave Aspire ou exporter para um serviço inexistente. A validação do override local
+no CI recebe uma chave efêmera mascarada. Não combine o override local com produção.
+
+O Dashboard mantém telemetria em memória: reiniciar perde os dados e exige novo
+login. A coleta existente não habilita corpos, headers ou parâmetros SQL sensíveis,
+mas logs de exceções e scopes não têm sanitização geral; trate a telemetria como
+informação administrativa sensível. O AppHost e seu fluxo de desenvolvimento
+continuam independentes e não são executados dentro do Compose.
+
+Referências: [segurança do Dashboard](https://aspire.dev/dashboard/security-considerations/),
+[imagem oficial](https://github.com/dotnet/dotnet-docker/blob/main/README.aspire-dashboard.md)
+e [mesclagem e variáveis do Collector](https://opentelemetry.io/docs/collector/configuration/).
+
 ## Desenvolvimento com .NET Aspire
 
 O AppHost oferece uma segunda experiência de desenvolvimento local para iniciar e
 observar API, Worker, SQL Server, Redis e RabbitMQ em um único Dashboard. Ele exige
 o SDK .NET `10.0.400` definido em `global.json`, certificado de desenvolvimento
-HTTPS confiável, Docker Desktop ou Podman compatível com o suporte atual do
-Aspire e a Aspire CLI `13.5.3`. O AppHost usa Aspire `13.5.3`, versão estável
+HTTPS confiável, Docker Engine (inclusive nativo no WSL) ou Podman acessível no
+ambiente onde o AppHost é executado, e a Aspire CLI `13.5.3`. O AppHost usa Aspire `13.5.3`, versão estável
 compatível com `net10.0`. Instale ou atualize a CLI com:
 
 ```powershell

@@ -3,7 +3,9 @@
 ## Escopo validado
 
 A topologia aprovada é de host único. No ambiente local, o Nginx é a única entrada
-e publica apenas `127.0.0.1:8080` e `127.0.0.1:8443`. API, Worker, SQL Server,
+da API e publica apenas `127.0.0.1:8080` e `127.0.0.1:8443`. O Aspire Dashboard
+standalone publica sua UI autenticada apenas em `127.0.0.1:18888`, sem portas OTLP
+no host; ele não faz parte do Compose explícito de produção. API, Worker, SQL Server,
 Redis, RabbitMQ e OpenTelemetry permanecem nas redes privadas do Compose. Se algum
 desses componentes for movido para outro host, este documento deixa de autorizar a
 topologia: TLS/mTLS, firewall e certificados emitidos pela infraestrutura deverão

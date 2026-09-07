@@ -38,6 +38,8 @@ ScaffoldingReadMe.txt
 
 # dotenv environment variables file
 .env
+.env.*
+!.env.example
 
 # Others
 ~$*
@@ -62,3 +64,4 @@ nunit-*.xml
 *.user
 *.suo
 docker-compose.override.local.yml
+CREDENCIAIS-DEV-LOCAL.md

@@ -30,8 +30,8 @@ docker run --rm \
   --volume "${project_root}:/source:ro" \
   --workdir /workspace \
   mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c \
-  bash -lc 'export SGE_DESIGNTIME_SQLSERVER="Server=sqlserver,1433;Database=SistemaGestaoEmpresarial;User Id=sa;Password=\"${SGE_SQLSERVER_SA_PASSWORD}\";Encrypt=True;TrustServerCertificate=True"
-    tar --exclude="bin" --exclude="obj" -C /source -cf - . | tar -C /workspace -xf -
+  bash -euo pipefail -c 'export SGE_DESIGNTIME_SQLSERVER="Server=sqlserver,1433;Database=SistemaGestaoEmpresarial;User Id=sa;Password=\"${SGE_SQLSERVER_SA_PASSWORD}\";Encrypt=True;TrustServerCertificate=True"
+    tar --exclude="bin" --exclude="obj" --exclude=".git" --exclude=".env" --exclude=".env.*" --exclude="CREDENCIAIS-DEV-LOCAL.md" -C /source -cf - . | tar --no-same-owner --no-same-permissions -C /workspace -xf -
     dotnet tool restore
     dotnet restore src/Sistema.Gestao.Empresarial.Infrastructure/Sistema.Gestao.Empresarial.Infrastructure.csproj --locked-mode
     dotnet tool run dotnet-ef database update --project src/Sistema.Gestao.Empresarial.Infrastructure --startup-project src/Sistema.Gestao.Empresarial.Infrastructure --context AppDbContext'

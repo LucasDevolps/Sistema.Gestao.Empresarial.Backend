@@ -37,17 +37,20 @@ jobs:
           app_sql_password="Ci!$(openssl rand -hex 24)aA1"
           redis_password="$(openssl rand -hex 32)"
           jwt_key="$(openssl rand -hex 32)"
+          aspire_otlp_key="$(openssl rand -hex 32)"
           echo "::add-mask::$sql_password"
           echo "::add-mask::$rabbit_password"
           echo "::add-mask::$app_sql_password"
           echo "::add-mask::$redis_password"
           echo "::add-mask::$jwt_key"
+          echo "::add-mask::$aspire_otlp_key"
           {
             echo "SGE_SQLSERVER_SA_PASSWORD=$sql_password"
             echo "SGE_RABBITMQ_PASSWORD=$rabbit_password"
             echo "SGE_SQLSERVER_APP_PASSWORD=$app_sql_password"
             echo "SGE_REDIS_PASSWORD=$redis_password"
             echo "SGE_JWT_SIGNING_KEY=$jwt_key"
+            echo "SGE_ASPIRE_OTLP_API_KEY=$aspire_otlp_key"
           } >> "$GITHUB_ENV"
 
       - name: Setup .NET from global.json
