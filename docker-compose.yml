@@ -228,7 +228,7 @@ services:
     cpus: 1.5
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.153.0@sha256:93aad750175cbf1a973ae1c5886c3371f4d800f61be25cdd26870b8441ffe9fa
+    image: otel/opentelemetry-collector-contrib:0.160.0@sha256:799dc6cf12c96192af37b5bdba804da8c10b3bc563b43cb90c3f3c58d9572ad6
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
       - ./deploy/otel-collector-config.yml:/etc/otelcol-contrib/config.yaml:ro
