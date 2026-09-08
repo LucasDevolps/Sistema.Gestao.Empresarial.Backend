@@ -1,4 +1,4 @@
-FROM nginx:1.30.4-alpine@sha256:02b1b2a0445514891a14aa371845f6085d5d9d10d385b30d6aad606a50a29a05
+FROM nginx:1.31.5-alpine@sha256:72ba65eb42c10344912a84ff42408db7d34f2feb642204570ab8fc5ffd29f1d3
 
 # Require the patched util-linux library even when the base image is pinned.
 RUN apk add --no-cache openssl su-exec 'libuuid>=2.42.3-r1' \
