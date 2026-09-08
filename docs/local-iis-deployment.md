@@ -1,5 +1,9 @@
 # Publicação local no IIS (coexistindo com o ambiente de desenvolvimento)
 
+Para o perfil público opcional com duas origens HTTPS e Cloudflare Tunnel, consulte
+[iis-cloudflare-deployment.md](iis-cloudflare-deployment.md). As instruções abaixo
+descrevem o perfil local, usado quando as origens públicas não são fornecidas.
+
 Este documento descreve como publicar a aplicação (API .NET 10 + SPA Angular) no
 **IIS do Windows**, para uso normal do sistema **sem manter nenhuma IDE, `dotnet run`
 ou `ng serve` aberta**, e **sem alterar** o ambiente de desenvolvimento atual
@@ -57,8 +61,8 @@ Pontos-chave:
   nenhuma recriação, nenhum seed destrutivo.
 - **Mesma infra.** Redis, RabbitMQ e o Collector são os mesmos do desenvolvimento.
 - **Mesma origem.** O browser fala só com `localhost:9080`. O site do frontend faz
-  reverse proxy de `/api` e `/health` para a API. Nenhum CORS é introduzido (a API
-  não registra política de CORS — mesma decisão do Nginx do projeto).
+  reverse proxy de `/api` e `/health` para a API. No perfil local, a lista CORS
+  permanece vazia; chamadas de mesma origem continuam funcionando normalmente.
 - **Só loopback.** Todo bind novo é `127.0.0.1`. Nada é publicado para a LAN.
 - **Production.** A API publica com `DOTNET_ENVIRONMENT=Production`: Swagger
   desativado, sem Developer Exception Page, sem stack trace.
@@ -340,8 +344,8 @@ altera nenhuma porta existente. Para retirá-las, veja o fim da seção 3.
 | **OpenTelemetry** | Mesma instrumentação, mesmo Collector. Só muda o endpoint da API do IIS: `OpenTelemetry__OtlpEndpoint = http://127.0.0.1:14317`. Nenhum trace/metric/log é desativado. |
 | **Aspire** | O `AppHost` é orquestração de desenvolvimento; a API publicada não depende dele. Nada removido, nada duplicado. |
 | **Redis / RabbitMQ** | Instâncias existentes. Sem ACL, usuário, senha, `instanceName` ou virtual host novos. Portas só em loopback, só se necessário. |
-| **Autenticação/Autorização** | Inalteradas. Tokens continuam em memória no SPA (Bearer no header). Sem CORS, sem `AllowAnyOrigin`, sem `*`. |
-| **Reverse proxy** | A API mantém `ReverseProxy:Enabled=true` + `KnownProxies=127.0.0.1` para ler `X-Forwarded-*` vindos do site do frontend (ARR). Rate limiting, IP forwarding e headers de segurança seguem valendo. |
+| **Autenticação/Autorização** | Inalteradas. Tokens continuam em memória no SPA (Bearer no header). CORS sem origens externas no perfil local, sem `AllowAnyOrigin`, sem `*`. |
+| **Reverse proxy** | No perfil local, a API mantém `ReverseProxy:Enabled=true` e proxies conhecidos `127.0.0.1`/`::1` para ler `X-Forwarded-*` vindos do site do frontend (ARR). O perfil Cloudflare tem regras próprias descritas no guia complementar. |
 | **Regras de negócio** | Nenhuma alteração em entidades, handlers, controllers, DTOs, permissões ou schema. |
 
 ---
@@ -384,6 +388,6 @@ manuais e isoladas**.
 | `docker-compose.iis.yml` | novo | overlay que publica SQL/Redis/RabbitMQ/OTLP **só em `127.0.0.1`** via bridge `iis-access` |
 | `docs/local-iis-deployment.md` | novo | este documento |
 
-Nenhum arquivo de aplicação, `appsettings*.json`, `Program.cs`, migration,
-`docker-compose.yml`/`override`/`production` ou configuração de desenvolvimento foi
-alterado.
+A lista acima se refere à implementação original da publicação local. Os ajustes
+de aplicação necessários ao perfil público estão descritos no guia complementar;
+nenhuma migration, Compose ou porta de desenvolvimento foi alterada por esse perfil.

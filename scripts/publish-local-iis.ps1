@@ -36,6 +36,14 @@
 .PARAMETER BackendPort
   Porta HTTP (loopback) do site IIS da API. Padrão 9081.
 
+.PARAMETER PublicFrontendOrigin
+  Origem HTTPS real do frontend. Também aceita SGE_PUBLIC_FRONTEND_ORIGIN.
+  Informe junto com PublicBackendOrigin para o perfil Cloudflare Tunnel local.
+
+.PARAMETER PublicBackendOrigin
+  Origem HTTPS real da API, sem /api. Também aceita SGE_PUBLIC_BACKEND_ORIGIN.
+  Sem as duas origens, preserva a publicação local de mesma origem.
+
 .PARAMETER FrontendPath
   Caminho do repositório do frontend Angular. Padrão:
   C:\Users\lucas\source\repos\Sistema.Gestao.Empresarial.Frontend
@@ -86,6 +94,9 @@ param(
 
     [ValidateRange(1, 65535)] [int]$FrontendPort = 9080,
     [ValidateRange(1, 65535)] [int]$BackendPort = 9081,
+
+    [string]$PublicFrontendOrigin = $env:SGE_PUBLIC_FRONTEND_ORIGIN,
+    [string]$PublicBackendOrigin = $env:SGE_PUBLIC_BACKEND_ORIGIN,
 
     [string]$FrontendPath = 'C:\Users\lucas\source\repos\Sistema.Gestao.Empresarial.Frontend',
     [string]$BackendPath,
@@ -146,6 +157,27 @@ $script:BackendRoot = if ($BackendPath) { $BackendPath } else { Split-Path -Pare
 $script:LogDir = Join-Path $script:BackendRoot 'logs'
 $script:LogFile = Join-Path $script:LogDir ("publish-iis-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $script:SecretValues = @()   # preenchido depois que o .env é lido
+$script:PublicMode = $false
+
+function Assert-PublicOrigins {
+    if ([string]::IsNullOrWhiteSpace($PublicFrontendOrigin) -and [string]::IsNullOrWhiteSpace($PublicBackendOrigin)) {
+        $script:PublicMode = $false
+        return
+    }
+    foreach ($origin in @($PublicFrontendOrigin, $PublicBackendOrigin)) {
+        $uri = $null
+        if (-not [Uri]::TryCreate($origin, [UriKind]::Absolute, [ref]$uri) -or
+            $uri.Scheme -ne 'https' -or $uri.Port -ne 443 -or $uri.UserInfo -or
+            $uri.AbsolutePath -ne '/' -or $uri.Query -or $uri.Fragment -or
+            $uri.HostNameType -ne [UriHostNameType]::Dns -or $uri.IsLoopback -or
+            $origin -ne $uri.GetLeftPart([UriPartial]::Authority) -or
+            $uri.Host -notmatch '^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]+)$') {
+            throw 'Informe ambas as origens HTTPS com FQDN real, sem porta alternativa, caminho, credenciais, query ou fragmento. Os hostnames provisórios do pedido não são domínios públicos.'
+        }
+    }
+    if ($PublicFrontendOrigin -eq $PublicBackendOrigin) { throw 'Informe origens distintas para frontend e backend neste perfil.' }
+    $script:PublicMode = $true
+}
 
 function Protect-Secret {
     param([string]$Text)
@@ -728,7 +760,7 @@ function Publish-Frontend {
     try {
         & npm ci; if ($LASTEXITCODE) { throw "npm ci falhou." }
         if (-not $SkipTests -and ($pkgJson.scripts.PSObject.Properties.Name -contains 'test:ci')) {
-            & npm run test:ci; if ($LASTEXITCODE) { Write-Log -Level WARN -Message "npm run test:ci falhou (seguindo — teste de UI headless costuma exigir Chrome)." }
+            & npm run test:ci; if ($LASTEXITCODE) { throw "npm run test:ci falhou. A publicação foi interrompida." }
         }
         & cmd /c $buildScript; if ($LASTEXITCODE) { throw "Build do frontend falhou ($buildScript)." }
     } finally { Pop-Location }
@@ -745,17 +777,7 @@ function Publish-Frontend {
         & robocopy $out $target /MIR /XF web.config /R:2 /W:2 /NFL /NDL /NP /LOG:$log | Out-Null
         if ($LASTEXITCODE -ge 8) { throw "robocopy do frontend falhou ($LASTEXITCODE)." }
         Write-FrontendWebConfig -Path (Join-Path $target 'web.config')
-        # config.json vem do build (public/config.json = {"apiBaseUrl":"/api",...}); é same-origin
-        # e não carrega segredos. Só avisamos se estiver divergente.
-        $cfg = Join-Path $target 'config.json'
-        if (Test-Path $cfg) {
-            try {
-                $c = Get-Content $cfg -Raw | ConvertFrom-Json
-                if ($c.apiBaseUrl -and $c.apiBaseUrl -ne '/api') {
-                    Write-Log -Level WARN -Message "config.json publicado usa apiBaseUrl='$($c.apiBaseUrl)' (esperado '/api' para mesma origem)."
-                }
-            } catch { Write-Log -Level WARN -Message "Não consegui validar config.json ($_)." }
-        }
+        Write-FrontendRuntimeConfig -Path (Join-Path $target 'config.json')
         Write-Log -Level OK -Message "Frontend publicado em $target."
     } catch {
         if (Test-Path $backup) {
@@ -766,10 +788,30 @@ function Publish-Frontend {
     }
 }
 
+function Write-FrontendRuntimeConfig {
+    param([string]$Path)
+    $config = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    $config.apiBaseUrl = if ($script:PublicMode) { "$PublicBackendOrigin/api" } else { '/api' }
+    if ($script:PublicMode) {
+        $config | Add-Member -NotePropertyName localApiBaseUrl -NotePropertyValue '/api' -Force
+    } else {
+        $config.PSObject.Properties.Remove('localApiBaseUrl')
+    }
+    $config | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding UTF8
+}
+
 function Write-FrontendWebConfig {
     param([string]$Path)
     # SPA fallback + reverse proxy same-origin de /api e /health para o site da API.
     # NÃO faz rewrite de /api para index.html (API e assets ficam fora do fallback).
+    $connectSource = if ($script:PublicMode) { "'self' $PublicBackendOrigin" } else { "'self'" }
+    $publicProxyBlock = if ($script:PublicMode) { @'
+        <rule name="SGE public API uses its own hostname" stopProcessing="true">
+          <match url="^(api|health)(/.*)?$" />
+          <conditions><add input="{HTTP_HOST}" pattern="^localhost(:[0-9]+)?$" negate="true" /></conditions>
+          <action type="CustomResponse" statusCode="404" statusReason="Not Found" statusDescription="Not Found" />
+        </rule>
+'@ } else { '' }
     $xml = @"
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
@@ -777,13 +819,25 @@ function Write-FrontendWebConfig {
     <httpProtocol>
       <customHeaders>
         <remove name="X-Powered-By" />
+        <remove name="X-Content-Type-Options" />
+        <add name="X-Content-Type-Options" value="nosniff" />
+        <remove name="X-Frame-Options" />
+        <add name="X-Frame-Options" value="DENY" />
+        <remove name="Referrer-Policy" />
+        <add name="Referrer-Policy" value="no-referrer" />
+        <remove name="Permissions-Policy" />
+        <add name="Permissions-Policy" value="camera=(), microphone=(), geolocation=()" />
+        <remove name="Strict-Transport-Security" />
+        <add name="Strict-Transport-Security" value="max-age=31536000; includeSubDomains" />
+        <remove name="Content-Security-Policy" />
+        <add name="Content-Security-Policy" value="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src $connectSource; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" />
       </customHeaders>
     </httpProtocol>
     <directoryBrowse enabled="false" />
     <security>
       <requestFiltering removeServerHeader="true">
         <hiddenSegments>
-          <add segment="config.json" />
+          <remove segment="config.json" />
         </hiddenSegments>
       </requestFiltering>
     </security>
@@ -792,6 +846,7 @@ function Write-FrontendWebConfig {
     </staticContent>
     <rewrite>
       <rules>
+$publicProxyBlock
         <!-- Proxy same-origin de /api e /health para o site da API (ARR).
              NÃO usa <serverVariables>: a seção system.webServer/rewrite/allowedServerVariables
              é travada em escopo de servidor e, referenciada num web.config de site,
@@ -814,6 +869,12 @@ function Write-FrontendWebConfig {
     </rewrite>
     <httpErrors errorMode="Custom" existingResponse="PassThrough" />
   </system.webServer>
+  <location path="config.json">
+    <system.webServer><staticContent><clientCache cacheControlMode="DisableCache" /></staticContent></system.webServer>
+  </location>
+  <location path="index.html">
+    <system.webServer><staticContent><clientCache cacheControlMode="DisableCache" /></staticContent></system.webServer>
+  </location>
 </configuration>
 "@
     if ($DryRun) { Write-Log -Level DRY -Message "[dry-run] gravar web.config do frontend em $Path"; return }
@@ -830,7 +891,7 @@ function Get-ApiEnvironmentVariables {
     $redis = "127.0.0.1:$RedisLoopbackPort,user=$($Env['SGE_REDIS_USERNAME']),password=$($Env['SGE_REDIS_PASSWORD']),abortConnect=false"
     $otelRatio = if ($Env.ContainsKey('SGE_OTEL_SAMPLING_RATIO') -and $Env['SGE_OTEL_SAMPLING_RATIO']) { $Env['SGE_OTEL_SAMPLING_RATIO'] } else { '0.1' }
     # Ordenado; os *segredos* nunca são impressos (Protect-Secret cobre o log).
-    return [ordered]@{
+    $variables = [ordered]@{
         'DOTNET_ENVIRONMENT'                = 'Production'
         'ASPNETCORE_ENVIRONMENT'           = 'Production'
         'ConnectionStrings__SqlServer'     = $sql
@@ -848,8 +909,16 @@ function Get-ApiEnvironmentVariables {
         'ReverseProxy__Enabled'           = 'true'
         'ReverseProxy__ForwardLimit'      = '1'
         'ReverseProxy__KnownProxies__0'   = '127.0.0.1'
+        'ReverseProxy__KnownProxies__1'   = '::1'
+        'ReverseProxy__UseCloudflareHeaders' = "$($script:PublicMode)".ToLowerInvariant()
         'AllowedHosts'                     = 'localhost'
+        'Swagger__Enabled'                 = 'false'
     }
+    if ($script:PublicMode) {
+        $variables['AllowedHosts'] = "localhost;$(([Uri]$PublicBackendOrigin).DnsSafeHost)"
+        $variables['Cors__AllowedOrigins__0'] = $PublicFrontendOrigin
+    }
+    return $variables
 }
 
 function Set-AppPoolEnvironmentVariables {
@@ -996,6 +1065,7 @@ function Test-Deployment {
     $ok = (Test-HttpOk "http://localhost:$BackendPort/health/ready") -and $ok
     $ok = (Test-HttpOk "http://localhost:$FrontendPort/" -MustContain 'app-root') -and $ok
     $ok = (Test-HttpOk "http://localhost:$FrontendPort/login" -MustContain 'app-root') -and $ok   # SPA fallback
+    $ok = (Test-HttpOk "http://localhost:$FrontendPort/config.json" -MustContain '"apiBaseUrl"') -and $ok
     $ok = (Test-HttpOk "http://localhost:$FrontendPort/health/ready") -and $ok                    # proxy same-origin
     # Swagger NÃO deve responder em Production:
     if (Test-HttpOk "http://localhost:$BackendPort/swagger/index.html" -Accept @(404, 401)) {
@@ -1010,6 +1080,7 @@ function Test-Deployment {
 #  Ações
 # ===========================================================================
 function Invoke-Publish {
+    Assert-PublicOrigins
     $envMap = Read-DotEnv
     Assert-RequiredSecrets -EnvMap $envMap
 

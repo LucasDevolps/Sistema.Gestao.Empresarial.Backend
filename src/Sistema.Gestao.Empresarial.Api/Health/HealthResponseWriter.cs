@@ -5,6 +5,13 @@ namespace Sistema.Gestao.Empresarial.Api.Health;
 
 public static class HealthResponseWriter
 {
+    public static Task WritePublicAsync(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json";
+        context.Response.Headers.CacheControl = "no-store";
+        return context.Response.WriteAsync(JsonSerializer.Serialize(new { status = report.Status.ToString() }));
+    }
+
     public static Task WriteAsync(HttpContext context, HealthReport report)
     {
         context.Response.ContentType = "application/json";
