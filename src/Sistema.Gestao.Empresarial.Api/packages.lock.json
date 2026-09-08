@@ -346,8 +346,8 @@
       },
       "RabbitMQ.Client": {
         "type": "Transitive",
-        "resolved": "7.2.0",
-        "contentHash": "PPQ7cF7lwbhqC4up6en1bTUZlz06YqQwJecOJzsguTtyhNA7oL5uNDZIx/h6ZfcyPZV4V3DYKSCxfm4RUFLcbA=="
+        "resolved": "7.2.2",
+        "contentHash": "k4b6RnTXpLbsF96V93ooNYxgPMnoA2tEm24B6AXNJr1mG8wwNYdA1XJtgU66L5xqeGyveS7SJriRzlX3cbqQNA=="
       },
       "RESPite": {
         "type": "Transitive",
@@ -452,6 +452,7 @@
           "OpenTelemetry.Instrumentation.Http": "[1.18.0, )",
           "OpenTelemetry.Instrumentation.Runtime": "[1.18.0, )",
           "OpenTelemetry.Instrumentation.SqlClient": "[1.18.0, )",
+          "RabbitMQ.Client": "[7.2.2, )",
           "Sistema.Gestao.Empresarial.Application": "[1.0.0, )",
           "Sistema.Gestao.Empresarial.Domain": "[1.0.0, )",
           "StackExchange.Redis": "[3.1.31, )"
