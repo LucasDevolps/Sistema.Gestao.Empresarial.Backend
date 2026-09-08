@@ -31,8 +31,8 @@
 # API startup, HTTP hardening, authentication and permission administration.
 /src/Sistema.Gestao.Empresarial.Api/Program.cs @LucasDevolps
 /src/Sistema.Gestao.Empresarial.Api/Security/ @LucasDevolps
-/src/Sistema.Gestao.Empresarial.Api/Controllers/AuthController.cs @LucasDevolps
-/src/Sistema.Gestao.Empresarial.Api/Controllers/UsersController.cs @LucasDevolps
+# Every endpoint: authentication, authorization and organizational isolation surface.
+/src/Sistema.Gestao.Empresarial.Api/Controllers/ @LucasDevolps
 /src/Sistema.Gestao.Empresarial.Api/appsettings*.json @LucasDevolps
 
 # Identity, authorization, JWT, credential hashing and session protection.
@@ -43,6 +43,14 @@
 /src/Sistema.Gestao.Empresarial.Infrastructure/Security/ @LucasDevolps
 /src/Sistema.Gestao.Empresarial.Infrastructure/Authorization/ @LucasDevolps
 /src/Sistema.Gestao.Empresarial.Infrastructure/Identity/ @LucasDevolps
+
+# Organizational boundaries, employees and cross-organization tenant isolation.
+/src/Sistema.Gestao.Empresarial.Application/Employees/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Application/Organizations/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Employees/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Organizations/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Organizacoes/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Pessoas/ @LucasDevolps
 
 # Initial administrator provisioning, including its executable entry point.
 /src/Sistema.Gestao.Empresarial.Application/Bootstrap/ @LucasDevolps
@@ -78,6 +86,9 @@
 /tests/Sistema.Gestao.Empresarial.IntegrationTests/Security/ @LucasDevolps
 /tests/Sistema.Gestao.Empresarial.IntegrationTests/Authentication/ @LucasDevolps
 /tests/Sistema.Gestao.Empresarial.IntegrationTests/Authorization/ @LucasDevolps
+# Tests asserting cross-organization isolation for employees and org catalogs.
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Employees/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Organizations/ @LucasDevolps
 /tests/Sistema.Gestao.Empresarial.IntegrationTests/Bootstrap/ @LucasDevolps
 /tests/Sistema.Gestao.Empresarial.IntegrationTests/Auditing/ @LucasDevolps
 /tests/Sistema.Gestao.Empresarial.IntegrationTests/Architecture/ @LucasDevolps
