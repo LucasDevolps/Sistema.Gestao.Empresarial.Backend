@@ -27,15 +27,11 @@ Quando releases estáveis passarem a ser publicadas, esta seção deverá ser at
 
 ## Como reportar uma vulnerabilidade
 
-Se você identificar uma possível vulnerabilidade, abra uma **GitHub Issue** neste repositório.
+Se você identificar uma possível vulnerabilidade, reporte-a exclusivamente pelo **Private Vulnerability Reporting** do GitHub, o único canal oficial para vulnerabilidades deste projeto:
 
-Utilize um título que permita identificar rapidamente o tipo do relato, por exemplo:
+[Reportar uma vulnerabilidade em privado](https://github.com/LucasDevolps/Sistema.Gestao.Empresarial.Backend/security/advisories/new).
 
-```text
-[SECURITY] Possível falha de autorização em endpoint autenticado
-```
-
-O relato inicial deve conter somente informações que possam ser publicadas com segurança.
+Esse canal também está disponível pelo botão **Report a vulnerability** na área **Security** do repositório. O relato é privado e não é publicado como uma Issue comum. Utilize esse mesmo canal para o relato inicial e os detalhes adicionais.
 
 Inclua, quando aplicável:
 
@@ -47,15 +43,18 @@ Inclua, quando aplicável:
 - severidade sugerida;
 - comportamento esperado;
 - comportamento observado;
-- passos **sanitizados** para reprodução;
+- passos mínimos e **sanitizados** para reprodução;
 - ambiente utilizado durante o teste;
-- evidências ou logs completamente redigidos;
+- evidências ou logs sanitizados;
+- CVE ou GHSA relacionado;
 - possível mitigação, caso conhecida.
 
-### Não publique na Issue
+### Não divulgue em canais públicos
 
-Não inclua:
+É proibido usar **Issues públicas, Pull Requests, Discussions ou comentários** para divulgar:
 
+- vulnerabilidades exploráveis;
+- credenciais ou secrets;
 - senhas;
 - access tokens;
 - refresh tokens;
@@ -75,15 +74,13 @@ Não inclua:
 - informações pessoais identificáveis (PII);
 - informações médicas ou hospitalares reais;
 - dados de pacientes;
-- dados de funcionários reais;
+- dados de funcionários ou organizações reais;
 - segredos de CI/CD;
 - payloads destrutivos;
-- exploits completos capazes de comprometer imediatamente uma instalação;
+- exploits;
 - qualquer informação que permita acesso não autorizado a um ambiente real.
 
-Se a reprodução exigir informações que não podem ser publicadas com segurança, abra inicialmente a Issue com uma descrição sanitizada.
-
-Os detalhes adicionais deverão ser compartilhados somente por um meio adequado combinado posteriormente com o mantenedor.
+Mesmo no relato privado, não compartilhe secrets completos quando não forem necessários. Sanitize evidências, logs e anexos, utilize dados fictícios e inclua somente os detalhes mínimos necessários para reproduzir e avaliar o problema em ambiente autorizado.
 
 ---
 
@@ -358,13 +355,13 @@ Não é autorizado, em nome deste projeto:
 - realizar ataques físicos;
 - executar malware;
 - causar indisponibilidade proposital;
-- executar ataques volumétricos de DoS ou DDoS;
+- executar ataques de DoS ou DDoS;
 - destruir ou alterar dados reais;
-- persistir acesso após comprovar uma vulnerabilidade;
+- persistir acesso;
 - realizar movimentação lateral;
 - extrair dados além do mínimo necessário para demonstrar o problema.
 
-Ao comprovar uma vulnerabilidade, utilize a menor quantidade possível de dados e ações necessárias.
+Aplique o princípio de mínima exploração: ao comprovar uma vulnerabilidade, utilize dados fictícios e a menor quantidade possível de dados e ações necessárias.
 
 ---
 
@@ -385,7 +382,7 @@ Prefira sempre:
 - ambientes locais;
 - containers descartáveis.
 
-Evidências anexadas a Issues devem ser sanitizadas.
+Evidências anexadas ao relato privado devem ser sanitizadas, inclusive logs e imagens.
 
 ---
 
@@ -395,9 +392,9 @@ Caso encontre uma credencial ou secret aparentemente válido no código, histór
 
 1. não tente utilizá-lo contra um ambiente real;
 2. não publique o valor;
-3. não copie o segredo para a Issue;
-4. informe apenas o arquivo ou contexto aproximado;
-5. trate o valor como potencialmente comprometido.
+3. não compartilhe o secret completo no relato privado quando não for necessário;
+4. informe o arquivo ou contexto aproximado pelo Private Vulnerability Reporting;
+5. trate o valor como comprometido.
 
 O mantenedor deverá considerar a rotação ou revogação da credencial afetada.
 
@@ -439,15 +436,15 @@ Problemas de dependências ou infraestrutura podem continuar sendo reportados qu
 
 ---
 
-## Boas práticas ao abrir o relato
+## Boas práticas ao enviar o relato privado
 
 Um bom relato permite reproduzir e corrigir o problema sem expor informações perigosas.
 
-Exemplo de estrutura:
+Exemplo de estrutura para o relato no Private Vulnerability Reporting:
 
 ```text
 Título:
-[SECURITY] Bypass de autorização em <componente>
+Bypass de autorização em <componente>
 
 Resumo:
 Descrição curta e sanitizada.
@@ -455,8 +452,11 @@ Descrição curta e sanitizada.
 Componente afetado:
 API / Worker / Nginx / Redis / RabbitMQ / SQL Server / CI etc.
 
-Commit ou versão:
-<hash ou branch>
+Endpoint ou funcionalidade:
+<Método e rota genérica ou nome da funcionalidade>
+
+Branch, commit ou versão:
+<branch, hash ou versão>
 
 Severidade sugerida:
 Low / Medium / High / Critical
@@ -478,6 +478,12 @@ Local / Docker / sistema operacional / versão do .NET.
 
 Evidências:
 Somente logs ou imagens sanitizadas.
+
+CVE ou GHSA relacionado:
+<Identificador público, se houver>
+
+Mitigação sugerida:
+<Possível correção ou mitigação, se conhecida>
 ```
 
 ---
