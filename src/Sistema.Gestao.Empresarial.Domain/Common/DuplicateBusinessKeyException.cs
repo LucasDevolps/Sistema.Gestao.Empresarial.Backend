@@ -12,6 +12,10 @@ namespace Sistema.Gestao.Empresarial.Domain.Common;
 /// sob concorrência. A <see cref="System.Exception.Message"/> é um texto fixo,
 /// redigido para consumo do cliente: não contém o valor informado pelo usuário nem
 /// detalhes de infraestrutura (SQL, número/nome de constraint, stack trace).
+/// O handler global também <b>não</b> registra a cadeia de <c>InnerException</c>
+/// desta exceção nos logs — apenas metadados seguros (code, field, número do erro
+/// SQL quando conhecido). A <see cref="System.Exception.InnerException"/> permanece
+/// preenchida para diagnóstico interno em outras camadas.
 /// </remarks>
 public sealed class DuplicateBusinessKeyException : Exception
 {
@@ -21,10 +25,15 @@ public sealed class DuplicateBusinessKeyException : Exception
     /// </summary>
     public const string ErrorCode = "DUPLICATE_BUSINESS_KEY";
 
-    public DuplicateBusinessKeyException(string message, string? field = null, Exception? innerException = null)
+    public DuplicateBusinessKeyException(
+        string message,
+        string? field = null,
+        Exception? innerException = null,
+        int? sqlErrorNumber = null)
         : base(message, innerException)
     {
         Field = field;
+        SqlErrorNumber = sqlErrorNumber;
     }
 
     /// <summary>
@@ -33,4 +42,12 @@ public sealed class DuplicateBusinessKeyException : Exception
     /// segurança. Nunca corresponde a nome de coluna, tabela ou constraint interna.
     /// </summary>
     public string? Field { get; }
+
+    /// <summary>
+    /// Número do erro do SQL Server (<c>2601</c> índice único / <c>2627</c> constraint)
+    /// quando a duplicidade foi detectada pelo banco sob concorrência; <c>null</c>
+    /// quando detectada pela pré-checagem. Metadado seguro — não contém texto da
+    /// mensagem do SQL Server, nome de índice/constraint nem o valor duplicado.
+    /// </summary>
+    public int? SqlErrorNumber { get; }
 }

@@ -42,7 +42,7 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
         var conflict = await client.PostAsJsonAsync(
             "/api/profissoes", new { name = $"   {name}   ", description = (string?)null });
 
-        await AssertDuplicateProblemAsync(conflict, expectedField: "name");
+        await AssertDuplicateProblemAsync(conflict, expectedField: "name", submittedValue: name);
     }
 
     [Fact]
@@ -74,7 +74,7 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
         var conflict = await client.PutAsJsonAsync(
             $"/api/profissoes/{secondGuid}", new { name = first, description = (string?)null });
 
-        await AssertDuplicateProblemAsync(conflict, expectedField: "name");
+        await AssertDuplicateProblemAsync(conflict, expectedField: "name", submittedValue: first);
     }
 
     // ---------- Cargo ----------
@@ -99,7 +99,7 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
         await client.PostAsJsonAsync("/api/cargos", new { name, description = (string?)null });
         var conflict = await client.PostAsJsonAsync("/api/cargos", new { name = $" {name} ", description = (string?)null });
 
-        await AssertDuplicateProblemAsync(conflict, expectedField: "name");
+        await AssertDuplicateProblemAsync(conflict, expectedField: "name", submittedValue: name);
     }
 
     // ---------- Funcionário ----------
@@ -128,7 +128,7 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
         var conflict = await client.PostAsJsonAsync(
             "/api/funcionarios", EmployeePayload(seed, email.ToUpperInvariant()));
 
-        await AssertDuplicateProblemAsync(conflict, expectedField: "email");
+        await AssertDuplicateProblemAsync(conflict, expectedField: "email", submittedValue: email);
     }
 
     [Fact]
@@ -176,7 +176,7 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
             levelGuid = seed.LevelGuid
         });
 
-        await AssertDuplicateProblemAsync(conflict, expectedField: "email");
+        await AssertDuplicateProblemAsync(conflict, expectedField: "email", submittedValue: emailA);
     }
 
     // ---------- Helpers ----------
@@ -199,12 +199,16 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
         sectors = Array.Empty<object>()
     };
 
-    private static async Task AssertDuplicateProblemAsync(HttpResponseMessage response, string expectedField)
+    private static async Task AssertDuplicateProblemAsync(
+        HttpResponseMessage response,
+        string expectedField,
+        string submittedValue)
     {
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
 
-        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        var raw = await response.Content.ReadAsStringAsync();
+        var problem = System.Text.Json.JsonSerializer.Deserialize<JsonElement>(raw);
         Assert.Equal(409, problem.GetProperty("status").GetInt32());
         Assert.Equal("Registro duplicado.", problem.GetProperty("title").GetString());
         Assert.Equal("DUPLICATE_BUSINESS_KEY", problem.GetProperty("code").GetString());
@@ -213,9 +217,13 @@ public sealed class DuplicateBusinessKeyContractTests : IClassFixture<DuplicateB
         Assert.True(problem.TryGetProperty("correlationId", out var correlationId));
         Assert.False(string.IsNullOrWhiteSpace(correlationId.GetString()));
 
-        // `detail` traz uma mensagem legível, porém estável e sem o valor informado.
+        // `detail` traz uma mensagem legível, porém estável: nunca o valor informado
+        // pelo usuário (título/nome/e-mail) nem detalhes de infraestrutura.
         var detail = problem.GetProperty("detail").GetString();
         Assert.False(string.IsNullOrWhiteSpace(detail));
+        Assert.DoesNotContain(submittedValue, detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(submittedValue.Trim(), detail, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(submittedValue, raw, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("SELECT", detail, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("IX_", detail, StringComparison.Ordinal);
     }

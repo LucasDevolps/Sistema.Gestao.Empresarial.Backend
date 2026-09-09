@@ -23,7 +23,7 @@ namespace Sistema.Gestao.Empresarial.IntegrationTests.Api;
 /// substituídas por dublês. Exercita o contrato HTTP de duplicidade de ponta a ponta,
 /// sem depender de SQL Server, Redis ou RabbitMQ.
 /// </summary>
-public sealed class DuplicateBusinessKeyContractApiFactory : WebApplicationFactory<Program>
+public class DuplicateBusinessKeyContractApiFactory : WebApplicationFactory<Program>
 {
     private readonly string _databaseName = $"duplicate-contract-{Guid.NewGuid():N}";
     private readonly SemaphoreSlim _seedLock = new(1, 1);

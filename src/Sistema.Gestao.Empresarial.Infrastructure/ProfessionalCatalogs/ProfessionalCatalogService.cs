@@ -407,7 +407,7 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
             });
         }
         catch (DbUpdateException exception) when (
-            exception.InnerException is SqlException { Number: 2601 or 2627 })
+            exception.InnerException is SqlException { Number: 2601 or 2627 } sqlException)
         {
             // Na superfície de escrita deste serviço a única chave única passível de
             // colisão por entrada do usuário é Profissoes/Cargos.Nome (os demais índices
@@ -415,8 +415,12 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
             // violação 2601/2627 aqui é, com segurança, duplicidade de chave de negócio
             // — traduzida para o mesmo tipo e código da pré-checagem, sem inspecionar
             // texto localizado do SQL Server nem expor nome de índice/constraint.
+            // Só o número do erro (2601/2627) é propagado, como metadado seguro de log.
             throw new DuplicateBusinessKeyException(
-                "Já existe um registro com esta chave de negócio.", field: "name", innerException: exception);
+                "Já existe um registro com esta chave de negócio.",
+                field: "name",
+                innerException: exception,
+                sqlErrorNumber: sqlException.Number);
         }
     }
 
