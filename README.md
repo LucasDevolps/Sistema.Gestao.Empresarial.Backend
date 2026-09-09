@@ -22,6 +22,173 @@ backup/restore estão em [`docs/production-readiness.md`](docs/production-readin
 - Nginx, SQL Server, Redis, RabbitMQ, API, Worker e Collector executáveis via Compose;
 - testes unitários, integração e validação arquitetural de segurança.
 
+## Tecnologias e versões fixadas
+
+| Componente | Versão/referência do repositório |
+| --- | --- |
+| .NET SDK / target framework | SDK `10.0.400` (`latestPatch`) e `net10.0` |
+| Entity Framework Core / `dotnet-ef` | `10.0.11` |
+| .NET Aspire AppHost / CLI | `13.5.3` |
+| Aspire Dashboard no Compose | `13.5.2` (imagem fixada por digest) |
+| SQL Server | SQL Server 2022 |
+| Redis | `8.2.1-alpine` |
+| RabbitMQ | `4.3.5-management-alpine`, integração MassTransit `8.5.8` |
+| OpenTelemetry | bibliotecas `1.18.0` e Collector Contrib `0.153.0` |
+| Testes | xUnit `2.9.3`, Microsoft.NET.Test.Sdk `18.9.0` e Coverlet `6.0.4` |
+
+As versões NuGet são resolvidas de forma determinística pelos
+`packages.lock.json`; restore travado, auditoria NuGet e propriedades comuns ficam em
+`Directory.Build.props`. O manifesto de ferramenta local `dotnet-tools.json`
+mantém o `dotnet-ef`, e `global.json` fixa o SDK.
+
+## Arquitetura da solução
+
+```text
+Api ───────────────┐
+Bootstrap ─────────┼──> Application ──> Domain
+Worker ────────────┤          ^
+                   └──> Infrastructure ──> Application + Domain
+AppHost ──────────────> Api + Worker
+```
+
+| Projeto | Responsabilidade |
+| --- | --- |
+| `Sistema.Gestao.Empresarial.Domain` | entidades, invariantes e regras de domínio, sem dependências de infraestrutura |
+| `Sistema.Gestao.Empresarial.Application` | contratos, DTOs, portas e validações FluentValidation dos casos de uso |
+| `Sistema.Gestao.Empresarial.Infrastructure` | EF Core/SQL Server, Redis, identidade, auditoria, autorização, Outbox/Inbox, RabbitMQ e OpenTelemetry |
+| `Sistema.Gestao.Empresarial.Api` | controllers REST, autenticação/autorização, middleware, rate limiting, headers e health checks |
+| `Sistema.Gestao.Empresarial.Worker` | publicação da Outbox, consumo da Inbox e retenção de auditoria em background |
+| `Sistema.Gestao.Empresarial.Bootstrap` | provisionamento transacional e one-shot do primeiro administrador |
+| `Sistema.Gestao.Empresarial.AppHost` | orquestração local alternativa com .NET Aspire; não participa do deploy |
+| `Sistema.Gestao.Empresarial.UnitTests` | testes rápidos de domínio e regras sem infraestrutura externa |
+| `Sistema.Gestao.Empresarial.IntegrationTests` | testes da API, persistência, segurança e infraestrutura real opt-in |
+
+## Mapa completo do repositório
+
+O mapa abaixo cobre todos os arquivos versionados por finalidade. Arquivos `.cs`
+ficam agrupados pelo módulo que representam para manter esta documentação legível;
+o inventário exato pode ser consultado com `git ls-files`.
+
+```text
+.
+├── .github/
+│   ├── workflows/ci.yml                 # build, testes, segurança, Compose e imagens
+│   ├── workflows/codeql.yml             # análise CodeQL de C# e Actions
+│   ├── CODEOWNERS                        # responsáveis por revisão
+│   ├── PULL_REQUEST_TEMPLATE.md          # checklist de pull request
+│   └── dependabot.yml                    # atualizações automatizadas
+├── deploy/
+│   ├── nginx/                            # imagem, entrypoint, proxy e configuração TLS
+│   ├── sqlserver/initialize-app-login.sh # criação idempotente do login restrito
+│   ├── otel-collector-config.yml         # pipeline OTLP base
+│   └── otel-collector-aspire.yml         # extensão local para o Dashboard
+├── docs/
+│   ├── architecture.md                   # arquitetura, ameaças e decisões de segurança
+│   └── production-readiness.md           # go-live, retenção, backup e restore
+├── scripts/
+│   ├── _db-has-schema.sh                 # verificação interna de schema
+│   ├── apply-migrations-docker.sh        # migrations em job isolado
+│   ├── backup-and-verify-sqlserver.sh    # backup e restore verificável
+│   ├── bootstrap-initial-admin-docker.sh # bootstrap administrativo one-shot
+│   ├── run-real-integration-tests-wsl.sh # testes reais via Docker no WSL
+│   ├── dev-up.ps1 / dev-down.ps1         # ciclo local backend + frontend
+│   └── wsl-keepalive-guardian.ps1        # keepalive opcional do WSL
+├── src/
+│   ├── Sistema.Gestao.Empresarial.Api/            # Controllers, Security, Health, Errors e Auditing
+│   ├── Sistema.Gestao.Empresarial.Application/    # contratos/validadores por caso de uso
+│   ├── Sistema.Gestao.Empresarial.Domain/         # Auditoria, Integração, Organizações, Pessoas e Segurança
+│   ├── Sistema.Gestao.Empresarial.Infrastructure/ # serviços, mensageria, cache e Persistence/Migrations
+│   ├── Sistema.Gestao.Empresarial.Worker/         # host dos serviços em background
+│   ├── Sistema.Gestao.Empresarial.Bootstrap/      # executável de bootstrap
+│   └── Sistema.Gestao.Empresarial.AppHost/        # AppHost, health checks e configuração Aspire
+├── tests/
+│   ├── Sistema.Gestao.Empresarial.UnitTests/       # Domain
+│   └── Sistema.Gestao.Empresarial.IntegrationTests/# Architecture, Auditing, Authentication,
+│                                                    # Authorization, Bootstrap, Employees,
+│                                                    # Messaging, Organizations, Persistence,
+│                                                    # ProfessionalCatalogs, Security e RealInfrastructure
+├── .dockerignore / .gitignore / .gitattributes    # higiene de build e Git
+├── .env.example                                   # catálogo de variáveis sem segredos
+├── Directory.Build.props                          # warnings, analyzers e restore comuns
+├── global.json / dotnet-tools.json                # SDK e ferramentas locais
+├── docker-compose.yml                             # topologia segura base
+├── docker-compose.override.yml                    # desenvolvimento local + Aspire Dashboard
+├── docker-compose.ci.yml                          # dependências publicadas só em loopback no CI
+├── docker-compose.production.yml                  # TLS fornecido externamente
+├── Sistema.Gestao.Empresarial.sln                 # nove projetos da solução
+├── SECURITY.md                                    # política para reporte de vulnerabilidades
+└── README.md                                      # esta documentação
+```
+
+Cada projeto executável contém seu `appsettings*.json`; API, Worker e AppHost têm
+perfis em `Properties/launchSettings.json`. API e Worker possuem `Dockerfile`, cada
+projeto mantém seu `.csproj` e lockfile, e as migrations/versionamento do modelo
+ficam em `Infrastructure/Persistence/Migrations`.
+
+## Configuração
+
+### Variáveis do `.env`
+
+Copie `.env.example` para `.env`. O Compose exige os valores sem default e nunca se
+deve versionar o arquivo resultante.
+
+| Grupo | Variáveis | Uso |
+| --- | --- | --- |
+| SQL Server | `SGE_SQLSERVER_SA_PASSWORD`, `SGE_SQLSERVER_APP_USERNAME`, `SGE_SQLSERVER_APP_PASSWORD` | administração somente nos jobs e credencial restrita da aplicação |
+| Redis | `SGE_REDIS_USERNAME`, `SGE_REDIS_PASSWORD` | usuário ACL limitado ao namespace `sge*` |
+| RabbitMQ | `SGE_RABBITMQ_USERNAME`, `SGE_RABBITMQ_PASSWORD` | acesso ao vhost `/sge` |
+| JWT | `SGE_JWT_SIGNING_KEY` | chave aleatória com no mínimo 32 caracteres; não reutilize outro segredo |
+| Telemetria | `SGE_ASPIRE_OTLP_API_KEY`, `SGE_OTEL_SAMPLING_RATIO` | ingestão local do Dashboard e proporção de amostragem (`0.1` por padrão) |
+| Portas | `SGE_HTTP_PORT`, `SGE_HTTPS_PORT` | Nginx (`8080`/`8443` por padrão) |
+| Portas auxiliares | `SGE_API_PORT`, `SGE_SQLSERVER_PORT`, `SGE_REDIS_PORT`, `SGE_RABBITMQ_MANAGEMENT_PORT`, `SGE_OTLP_GRPC_PORT`, `SGE_OTLP_HTTP_PORT` | compatibilidade/execuções auxiliares; o Compose local atual não as publica |
+| Nginx/TLS | `SGE_NGINX_SERVER_NAME`, `SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE`, `SGE_TLS_CERTIFICATE_PATH`, `SGE_TLS_PRIVATE_KEY_PATH` | host, certificado local ou mounts TLS de produção |
+| Redes | `SGE_DOCKER_NETWORK`, `SGE_API_PROXY_NETWORK`, `SGE_EDGE_NETWORK`, `SGE_API_PROXY_SUBNET`, `SGE_NGINX_INTERNAL_IP`, `SGE_API_INTERNAL_IP` | nomes, subnet e IPs fixos das redes Docker |
+| Bootstrap | `SGE_BOOTSTRAP_PASSWORD_FILE`, `SGE_BOOTSTRAP_ORGANIZATION_NAME`, `SGE_BOOTSTRAP_HOSPITAL_UNIT_NAME`, `SGE_BOOTSTRAP_PROFESSION_NAME`, `SGE_BOOTSTRAP_POSITION_NAME`, `SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_CODE`, `SGE_BOOTSTRAP_ADMINISTRATOR_NAME`, `SGE_BOOTSTRAP_ADMINISTRATOR_EMAIL`, `SGE_BOOTSTRAP_ADMINISTRATOR_PHONE`, `SGE_BOOTSTRAP_ADMISSION_DATE` | dados do primeiro administrador; senha somente por arquivo externo |
+
+Variáveis operacionais que não fazem parte do `.env.example`:
+
+- `SGE_DESIGNTIME_SQLSERVER`: conexão usada pelo design-time do EF Core;
+- `SGE_BACKUP_DIRECTORY`: diretório externo usado pelo script de backup;
+- `SGE_REAL_INFRASTRUCTURE_TESTS=true`: habilita a suíte real;
+- `SGE_TEST_SQLSERVER`, `SGE_TEST_REDIS`, `SGE_TEST_RABBITMQ_HOST`,
+  `SGE_TEST_RABBITMQ_PORT`, `SGE_TEST_RABBITMQ_VIRTUAL_HOST`,
+  `SGE_TEST_RABBITMQ_USERNAME` e `SGE_TEST_RABBITMQ_PASSWORD`: conexões dos testes;
+- `SGE_BOOTSTRAP_SQLSERVER` e `SGE_INITIAL_ADMIN_BOOTSTRAP`: conexão e trava interna
+  fornecidas pelo job de bootstrap, não destinadas à configuração cotidiana.
+
+### Chaves de aplicação
+
+`appsettings.json` fornece defaults não secretos; em produção, use variáveis de
+ambiente no formato .NET (`Seção__Chave`). As seções reconhecidas são:
+
+| Seção | Configuração padrão relevante |
+| --- | --- |
+| `ConnectionStrings:SqlServer` | vazia; obrigatória para API/Worker |
+| `Jwt` | issuer `Sistema.Gestao.Empresarial`, audience `.Web`, access token de 10 min |
+| `Session` | inatividade 30 min, persistência 60 s, validade absoluta 7 dias, 5 falhas e lockout 15 min |
+| `Redis` / `Cache` | timeout de conexão 5 s, instância `sge`, permissões em cache por 120 s |
+| `RabbitMq` | porta 5672; host e credenciais devem ser fornecidos |
+| `Outbox` | lote 50, polling 5 s, lease 60 s e retry máximo 300 s |
+| `Inbox` | 5 retries, delays 2–60 s, concorrência 16 e fila `sge-integration-events-v1` |
+| `Audit` | timeout de persistência 2 s e canal com capacidade 5.000 |
+| `AuditRetention` | acesso 180 dias, negócio 1.825 dias, lotes 500 a cada 24 h |
+| `ReverseProxy` | desligado fora do Compose, forward limit 1 e proxies conhecidos explícitos |
+| `RateLimiting` | global 300/min e autenticação 5/min |
+| `KestrelSecurity` | body 1 MiB, headers 10 s, keep-alive 30 s e data rate mínimo 240 B/s |
+| `OpenTelemetry` | habilitado, OTLP `localhost:4317`, sampling API `0.1` e Worker `1.0` |
+| `Swagger` | desligado por padrão e ligado somente em Development |
+
+### Arquivos Compose
+
+- `docker-compose.yml`: base em `Production`, redes internas, volumes persistentes,
+  health checks, limites de CPU/memória/PIDs e hardening; nenhum binding público;
+- `docker-compose.override.yml`: carregado automaticamente no desenvolvimento,
+  habilita certificado local, Nginx em loopback e Dashboard em `127.0.0.1:18888`;
+- `docker-compose.ci.yml`: publica SQL Server, Redis e RabbitMQ apenas em loopback
+  para os testes do runner e torna a rede padrão não interna;
+- `docker-compose.production.yml`: desliga certificado autogerado e monta
+  certificado/chave confiáveis. Use-o explicitamente e sem o override local.
+
 ## Desenvolvimento
 
 Pré-requisitos para execução sem containers: SDK .NET 10.0.400 e as dependências

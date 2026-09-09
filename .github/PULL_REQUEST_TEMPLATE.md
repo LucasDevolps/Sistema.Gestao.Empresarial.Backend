@@ -11,6 +11,7 @@
 - [ ] Performance
 - [ ] Banco de dados
 - [ ] Infraestrutura / DevOps
+- [ ] Dependências
 - [ ] Documentação
 - [ ] Testes
 - [ ] Breaking change
@@ -114,7 +115,18 @@ Aplicabilidade / justificativas:
 <details>
 <summary>Infraestrutura e dependências</summary>
 
-- [ ] Validei Docker/Compose afetados, health checks, usuário não root da API/Worker e hardening de produção; avaliei dependências NuGet/imagens/Actions e seus lockfiles ou referências fixadas.
+- [ ] Revisei health checks, usuário não root da API/Worker e hardening de produção quando afetados.
+- [ ] Para alterações em Docker/Compose, executei `docker compose config --quiet` com as combinações de arquivos pertinentes ao escopo.
+- [ ] Para atualizações de dependências, avaliei compatibilidade, alterações de lockfiles e referências fixadas de NuGet/imagens/Actions; mantive GitHub Actions fixadas por SHA imutável e revisei breaking changes e adaptações em atualizações major.
+
+<!-- Compose: valide somente as combinações afetadas. Exemplos existentes no CI:
+docker compose config --quiet
+docker compose -f docker-compose.yml -f docker-compose.ci.yml config --quiet
+Para produção, quando afetada: docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet (sem o override local).
+Não execute docker compose config sem --quiet para produzir evidências públicas: a saída pode conter valores interpolados sensíveis.
+PRs de dependências, inclusive Dependabot: registre em Testes e validação os resultados de build/testes, NuGet Audit e vulnerabilidades transitivas para NuGet, CodeQL quando executado e Trivy/SBOM quando imagens ou dependências containerizadas forem afetadas. Justifique verificações não executadas ou não aplicáveis.
+-->
+
 - [ ] Revisei TLS/headers/limites do Nginx e proxy confiável/IP real da API; SQL Server, Redis, RabbitMQ Management e OTLP não ganharam exposição pública indevida.
 - [ ] Preservei secrets externos ao repositório e Aspire/AppHost/Dashboard restritos ao desenvolvimento, com autenticação e acesso local; o deployment de produção continua definido pelo Compose/Nginx/Collector.
 
