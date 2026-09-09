@@ -320,12 +320,14 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
         long? ignoredId,
         CancellationToken cancellationToken)
     {
-        var normalized = name.Trim();
+        // Trim centralizado; a comparação insensível a caixa vem da collation da coluna Nome.
+        var normalized = ChaveNegocio.Normalizar(name);
         if (await dbContext.Profissoes.AnyAsync(
                 x => x.Nome == normalized && (!ignoredId.HasValue || x.Id != ignoredId.Value),
                 cancellationToken))
         {
-            throw new DomainException("Já existe uma profissão com o nome informado.");
+            throw new DuplicateBusinessKeyException(
+                $"Já existe uma profissão cadastrada com o título \"{normalized}\".");
         }
     }
 
@@ -334,12 +336,13 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
         long? ignoredId,
         CancellationToken cancellationToken)
     {
-        var normalized = name.Trim();
+        var normalized = ChaveNegocio.Normalizar(name);
         if (await dbContext.Cargos.AnyAsync(
                 x => x.Nome == normalized && (!ignoredId.HasValue || x.Id != ignoredId.Value),
                 cancellationToken))
         {
-            throw new DomainException("Já existe um cargo com o nome informado.");
+            throw new DuplicateBusinessKeyException(
+                $"Já existe um cargo cadastrado com o nome \"{normalized}\".");
         }
     }
 

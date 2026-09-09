@@ -23,6 +23,7 @@ public sealed class GlobalExceptionHandler(
             exception.GetType().FullName ?? exception.GetType().Name;
         var (status, title, level) = exception switch
         {
+            DuplicateBusinessKeyException => (StatusCodes.Status409Conflict, "Registro duplicado.", LogLevel.Warning),
             DomainException => (StatusCodes.Status422UnprocessableEntity, "Operação não permitida.", LogLevel.Warning),
             OrganizationAccessDeniedException => (StatusCodes.Status403Forbidden, "Acesso organizacional negado.", LogLevel.Warning),
             DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Conflito de concorrência.", LogLevel.Warning),
@@ -44,6 +45,9 @@ public sealed class GlobalExceptionHandler(
             {
                 Status = status,
                 Title = title,
+                // A mensagem de duplicidade é redigida no domínio e segura para o cliente;
+                // as demais exceções mantêm apenas o título genérico.
+                Detail = exception is DuplicateBusinessKeyException ? exception.Message : null,
                 Extensions = { ["correlationId"] = correlationId }
             },
             Exception = exception

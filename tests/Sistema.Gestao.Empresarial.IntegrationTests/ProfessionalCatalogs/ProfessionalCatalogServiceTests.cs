@@ -102,6 +102,120 @@ public sealed class ProfessionalCatalogServiceTests
     }
 
     [Fact]
+    public async Task Cenario1_CadastrarProfissaoInedita_DeveCriarRegistro()
+    {
+        await using var fixture = CatalogFixture.Create();
+
+        var profissao = await fixture.Service.CreateProfessionAsync(
+            new CreateProfessionalCatalogRequest("Farmacêutico", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.Equal("Farmacêutico", profissao.Name);
+        Assert.Equal(1, await fixture.Db.Profissoes.CountAsync(x => x.Nome == "Farmacêutico"));
+    }
+
+    [Fact]
+    public async Task Cenario2_CadastrarProfissaoDuplicadaExata_DeveRejeitarSemCriarSegundoRegistro()
+    {
+        await using var fixture = CatalogFixture.Create();
+        await fixture.Service.CreateProfessionAsync(
+            new CreateProfessionalCatalogRequest("Farmacêutico", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        var erro = await Assert.ThrowsAsync<DuplicateBusinessKeyException>(() =>
+            fixture.Service.CreateProfessionAsync(
+                new CreateProfessionalCatalogRequest("Farmacêutico", null),
+                fixture.Context(Guid.NewGuid()),
+                CancellationToken.None));
+
+        Assert.Contains("Farmacêutico", erro.Message);
+        Assert.Equal(1, await fixture.Db.Profissoes.CountAsync());
+    }
+
+    [Fact]
+    public async Task Cenario4_CadastrarProfissaoComEspacosNasExtremidades_DeveSerConsideradaDuplicada()
+    {
+        await using var fixture = CatalogFixture.Create();
+        await fixture.Service.CreateProfessionAsync(
+            new CreateProfessionalCatalogRequest("Farmacêutico", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<DuplicateBusinessKeyException>(() =>
+            fixture.Service.CreateProfessionAsync(
+                new CreateProfessionalCatalogRequest("   Farmacêutico   ", null),
+                fixture.Context(Guid.NewGuid()),
+                CancellationToken.None));
+
+        Assert.Equal(1, await fixture.Db.Profissoes.CountAsync());
+    }
+
+    [Fact]
+    public async Task Cenario5_AtualizarProprioRegistroMantendoTitulo_DevePermanecerValido()
+    {
+        await using var fixture = CatalogFixture.Create();
+        var profissao = await fixture.Service.CreateProfessionAsync(
+            new CreateProfessionalCatalogRequest("Farmacêutico", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        var atualizado = await fixture.Service.UpdateProfessionAsync(
+            profissao.Guid,
+            new UpdateProfessionalCatalogRequest("Farmacêutico", "Assistência farmacêutica"),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        Assert.NotNull(atualizado);
+        Assert.Equal("Farmacêutico", atualizado.Name);
+        Assert.Equal("Assistência farmacêutica", atualizado.Description);
+        Assert.Equal(1, await fixture.Db.Profissoes.CountAsync(x => x.Nome == "Farmacêutico"));
+    }
+
+    [Fact]
+    public async Task Cenario6_AtualizarRegistroParaTituloDeOutraProfissao_DeveSerRejeitado()
+    {
+        await using var fixture = CatalogFixture.Create();
+        await fixture.Service.CreateProfessionAsync(
+            new CreateProfessionalCatalogRequest("Farmacêutico", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+        var medico = await fixture.Service.CreateProfessionAsync(
+            new CreateProfessionalCatalogRequest("Médico", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<DuplicateBusinessKeyException>(() =>
+            fixture.Service.UpdateProfessionAsync(
+                medico.Guid,
+                new UpdateProfessionalCatalogRequest("Farmacêutico", null),
+                fixture.Context(Guid.NewGuid()),
+                CancellationToken.None));
+
+        Assert.Equal("Médico", (await fixture.Service.GetProfessionAsync(medico.Guid, CancellationToken.None))!.Name);
+        Assert.Equal(1, await fixture.Db.Profissoes.CountAsync(x => x.Nome == "Farmacêutico"));
+    }
+
+    [Fact]
+    public async Task CargoDuplicado_DeveSeguirAMesmaRegraDaProfissao()
+    {
+        await using var fixture = CatalogFixture.Create();
+        await fixture.Service.CreatePositionAsync(
+            new CreateProfessionalCatalogRequest("Analista", null),
+            fixture.Context(Guid.NewGuid()),
+            CancellationToken.None);
+
+        await Assert.ThrowsAsync<DuplicateBusinessKeyException>(() =>
+            fixture.Service.CreatePositionAsync(
+                new CreateProfessionalCatalogRequest("  Analista  ", null),
+                fixture.Context(Guid.NewGuid()),
+                CancellationToken.None));
+
+        Assert.Equal(1, await fixture.Db.Cargos.CountAsync());
+    }
+
+    [Fact]
     public async Task ListarNiveis_DeveRetornarOrdemEstruturadaEFiltrarStatus()
     {
         await using var fixture = CatalogFixture.Create();
