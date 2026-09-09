@@ -48,9 +48,17 @@ wsl --cd "C:\caminho\do\repositorio" bash scripts/backup-and-verify-sqlserver.sh
 
 O script cria um backup `COPY_ONLY` com checksum em `artifacts/backups`, grava o
 SHA-256, executa `RESTORE VERIFYONLY`, restaura em um banco temporário com nome
-controlado, roda `DBCC CHECKDB` e remove somente o banco temporário. O backup deve
-ser copiado para armazenamento criptografado, versionado e com acesso segregado.
-Uma cópia que permanece apenas no mesmo host não atende recuperação de desastre.
+controlado, roda `DBCC CHECKDB` e remove somente o banco temporário. Ele recusa
+sobrescrever um backup existente e registra cada execução em
+`logs/backup-sqlserver.jsonl` sem segredos.
+
+A cópia para fora do host é automatizada por `scripts/copy-backups-to-windows.ps1`
+(cópia semanal validada por SHA-256, ACL restritiva no destino e retenção de 2
+cópias; `-Register` agenda no Task Scheduler). A réplica de espera síncrona
+(overlay `docker-compose.replica.yml` + `scripts/configure-availability-group.sh`),
+a verificação de sincronização e o procedimento de failover **manual** estão em
+[`backup-and-replication.md`](backup-and-replication.md). A réplica não substitui
+o backup.
 
 ## Checklist de release
 
