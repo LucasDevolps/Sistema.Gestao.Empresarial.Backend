@@ -106,7 +106,7 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml build
 
       - name: Scan API image for fixable high and critical vulnerabilities
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: sistema-gestao-empresarial-api:latest
           format: table
@@ -116,7 +116,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Scan Worker image for fixable high and critical vulnerabilities
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: sistema-gestao-empresarial-worker:latest
           format: table
@@ -126,7 +126,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Scan Nginx image for fixable high and critical vulnerabilities
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: sistema-gestao-empresarial-nginx:latest
           format: table
@@ -139,7 +139,7 @@ jobs:
         run: mkdir -p artifacts/sbom
 
       - name: Generate CycloneDX SBOM
-        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .

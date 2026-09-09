@@ -546,12 +546,17 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
         long? ignoredEmployeeId,
         CancellationToken cancellationToken)
     {
+        // E-mail é chave de negócio do funcionário: normalização canônica em minúsculas
+        // (a entidade Funcionario grava sempre em minúsculas) e o índice único filtrado garante o banco.
         var normalized = email.Trim().ToLowerInvariant();
         if (await dbContext.Funcionarios.AnyAsync(x =>
                 x.Email == normalized && (!ignoredEmployeeId.HasValue || x.Id != ignoredEmployeeId.Value),
                 cancellationToken))
         {
-            throw new DomainException("Já existe um funcionário com o e-mail informado.");
+            // Mensagem fixa: não repete o e-mail informado (evita PII em log/observabilidade
+            // e log forging). O `field` usa o nome do contrato público da API.
+            throw new DuplicateBusinessKeyException(
+                "Já existe um funcionário cadastrado com este e-mail.", field: "email");
         }
     }
 

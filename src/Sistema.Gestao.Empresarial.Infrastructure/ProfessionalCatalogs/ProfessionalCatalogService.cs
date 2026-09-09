@@ -320,12 +320,16 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
         long? ignoredId,
         CancellationToken cancellationToken)
     {
-        var normalized = name.Trim();
+        // Trim centralizado; a comparação insensível a caixa vem da collation da coluna Nome.
+        var normalized = ChaveNegocio.Normalizar(name);
         if (await dbContext.Profissoes.AnyAsync(
                 x => x.Nome == normalized && (!ignoredId.HasValue || x.Id != ignoredId.Value),
                 cancellationToken))
         {
-            throw new DomainException("Já existe uma profissão com o nome informado.");
+            // Mensagem fixa: não repete o valor informado (evita PII, log forging e
+            // acoplamento do front-end ao texto). O `field` usa o nome do contrato público.
+            throw new DuplicateBusinessKeyException(
+                "Já existe uma profissão cadastrada com este título.", field: "name");
         }
     }
 
@@ -334,12 +338,13 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
         long? ignoredId,
         CancellationToken cancellationToken)
     {
-        var normalized = name.Trim();
+        var normalized = ChaveNegocio.Normalizar(name);
         if (await dbContext.Cargos.AnyAsync(
                 x => x.Nome == normalized && (!ignoredId.HasValue || x.Id != ignoredId.Value),
                 cancellationToken))
         {
-            throw new DomainException("Já existe um cargo com o nome informado.");
+            throw new DuplicateBusinessKeyException(
+                "Já existe um cargo cadastrado com este nome.", field: "name");
         }
     }
 
@@ -402,10 +407,20 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
             });
         }
         catch (DbUpdateException exception) when (
-            exception.InnerException is SqlException { Number: 2601 or 2627 })
+            exception.InnerException is SqlException { Number: 2601 or 2627 } sqlException)
         {
-            throw new ProfessionalCatalogPersistenceConflictException(
-                "A operação conflitou com outra alteração concorrente.", exception);
+            // Na superfície de escrita deste serviço a única chave única passível de
+            // colisão por entrada do usuário é Profissoes/Cargos.Nome (os demais índices
+            // únicos deste fluxo são sobre GUIDs gerados pelo servidor). Portanto uma
+            // violação 2601/2627 aqui é, com segurança, duplicidade de chave de negócio
+            // — traduzida para o mesmo tipo e código da pré-checagem, sem inspecionar
+            // texto localizado do SQL Server nem expor nome de índice/constraint.
+            // Só o número do erro (2601/2627) é propagado, como metadado seguro de log.
+            throw new DuplicateBusinessKeyException(
+                "Já existe um registro com esta chave de negócio.",
+                field: "name",
+                innerException: exception,
+                sqlErrorNumber: sqlException.Number);
         }
     }
 
@@ -433,6 +448,3 @@ public sealed class ProfessionalCatalogService(AppDbContext dbContext, TimeProvi
         position.Ativo
     };
 }
-
-public sealed class ProfessionalCatalogPersistenceConflictException(string message, Exception innerException)
-    : Exception(message, innerException);
