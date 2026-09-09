@@ -130,7 +130,10 @@ public sealed class ProfessionalCatalogServiceTests
                 fixture.Context(Guid.NewGuid()),
                 CancellationToken.None));
 
-        Assert.Contains("Farmacêutico", erro.Message);
+        // Mensagem estável, sem repetir o valor informado; campo do contrato público.
+        Assert.Equal("Já existe uma profissão cadastrada com este título.", erro.Message);
+        Assert.Equal("name", erro.Field);
+        Assert.DoesNotContain("Farmacêutico", erro.Message);
         Assert.Equal(1, await fixture.Db.Profissoes.CountAsync());
     }
 

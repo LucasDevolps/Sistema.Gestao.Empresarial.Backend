@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sistema.Gestao.Empresarial.Application.ProfessionalCatalogs;
 using Sistema.Gestao.Empresarial.Domain.Common;
-using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.RealInfrastructure;
 
@@ -23,9 +22,9 @@ public sealed class ProfessionalCatalogConcurrencyTests(RealInfrastructureFixtur
             TryCreatePositionAsync(positionName));
 
         Assert.Single(professionAttempts, x => x.Response is not null);
-        Assert.Single(professionAttempts, x => x.Error is DuplicateBusinessKeyException or ProfessionalCatalogPersistenceConflictException);
+        Assert.Single(professionAttempts, x => x.Error is DuplicateBusinessKeyException);
         Assert.Single(positionAttempts, x => x.Response is not null);
-        Assert.Single(positionAttempts, x => x.Error is DuplicateBusinessKeyException or ProfessionalCatalogPersistenceConflictException);
+        Assert.Single(positionAttempts, x => x.Error is DuplicateBusinessKeyException);
 
         await using var verification = fixture.CreateDbContext();
         Assert.Equal(1, await verification.Profissoes.CountAsync(x => x.Nome == professionName));
@@ -61,9 +60,7 @@ public sealed class ProfessionalCatalogConcurrencyTests(RealInfrastructureFixtur
             TryCreateProfessionAsync($" {professionName} "));
 
         Assert.Single(attempts, x => x.Response is not null);
-        Assert.Equal(
-            2,
-            attempts.Count(x => x.Error is DuplicateBusinessKeyException or ProfessionalCatalogPersistenceConflictException));
+        Assert.Equal(2, attempts.Count(x => x.Error is DuplicateBusinessKeyException));
 
         await using var verification = fixture.CreateDbContext();
         Assert.Equal(

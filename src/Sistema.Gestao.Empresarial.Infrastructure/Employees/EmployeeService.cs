@@ -553,8 +553,10 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 x.Email == normalized && (!ignoredEmployeeId.HasValue || x.Id != ignoredEmployeeId.Value),
                 cancellationToken))
         {
+            // Mensagem fixa: não repete o e-mail informado (evita PII em log/observabilidade
+            // e log forging). O `field` usa o nome do contrato público da API.
             throw new DuplicateBusinessKeyException(
-                $"Já existe um funcionário cadastrado com o e-mail \"{normalized}\".");
+                "Já existe um funcionário cadastrado com este e-mail.", field: "email");
         }
     }
 
