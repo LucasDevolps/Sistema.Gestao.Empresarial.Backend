@@ -143,6 +143,7 @@ deve versionar o arquivo resultante.
 | Grupo | Variáveis | Uso |
 | --- | --- | --- |
 | SQL Server | `SGE_SQLSERVER_SA_PASSWORD`, `SGE_SQLSERVER_APP_USERNAME`, `SGE_SQLSERVER_APP_PASSWORD` | administração somente nos jobs e credencial restrita da aplicação |
+| Réplica SQL Server | `SGE_SQLSERVER_REPLICA_SA_PASSWORD`, `SGE_AG_CERTIFICATE_PASSWORD` | senha administrativa exclusiva da réplica e segredo alfanumérico dos certificados do Availability Group |
 | Redis | `SGE_REDIS_USERNAME`, `SGE_REDIS_PASSWORD` | usuário ACL limitado ao namespace `sge*` |
 | RabbitMQ | `SGE_RABBITMQ_USERNAME`, `SGE_RABBITMQ_PASSWORD` | acesso ao vhost `/sge` |
 | JWT | `SGE_JWT_SIGNING_KEY` | chave aleatória com no mínimo 32 caracteres; não reutilize outro segredo |
@@ -249,14 +250,17 @@ pwsh ./scripts/dev-up.ps1 -SkipFrontend
 pwsh ./scripts/dev-down.ps1
 ```
 
-Os scripts derivam os diretórios a partir do repositório e usam Docker Engine na
-distribuição WSL `Ubuntu` (ajustável por `-Distro`). O frontend escuta somente em
-`127.0.0.1:4200`. O script de subida verifica o schema inicial antes de iniciar a
-aplicação; migrations posteriores continuam sendo aplicadas pelo job explícito.
-`-Bootstrap` executa o provisionamento administrativo já documentado. A parada
-preserva volumes; `-Down -Volumes` exige confirmação explícita para apagar dados.
-A sessão keepalive mantém a distribuição ativa; `-Full` a encerra. O guardião
-opcional `scripts/wsl-keepalive-guardian.ps1` só deve ser iniciado quando necessário.
+Os scripts `dev-up.ps1` e `dev-down.ps1` atualmente usam a distribuição WSL
+`Ubuntu` e caminhos absolutos definidos nas variáveis `$BackendWsl` e
+`$FrontendWin` no início dos arquivos. Ajuste esses valores para a sua estação antes
+do primeiro uso. O frontend escuta somente em `127.0.0.1:4200`. O script de subida
+verifica o schema inicial antes de iniciar a aplicação; migrations posteriores
+continuam sendo aplicadas pelo job explícito. `-Bootstrap` executa o provisionamento
+administrativo já documentado. A parada preserva volumes; `-Down -Volumes` exige
+confirmação explícita para apagar dados. A sessão keepalive mantém a distribuição
+ativa; `-Full` a encerra. Somente o guardião opcional
+`scripts/wsl-keepalive-guardian.ps1` aceita `-Distro`; ele só deve ser iniciado
+quando necessário.
 
 Não abra bindings `0.0.0.0`, regras de firewall ou portproxy para contornar problemas
 de localhost. Verifique o Docker na distribuição e o encaminhamento de localhost
