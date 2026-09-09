@@ -240,11 +240,12 @@ credenciais. `-RetainCount` aplica-se por destino.
 ### Tarefa agendada
 
 `-Register` cria/atualiza a tarefa **"SGE - Copia semanal de backup SQL Server"**:
-gatilho semanal, `pwsh -File copy-backups-to-windows.ps1 -RunBackup -Destinations
-<C:...>,<D:...> -RetainCount 2`, principal com o usuário atual (`LogonType S4U`,
-`RunLevel Highest`), `StartWhenAvailable` e limite de execução de 2 horas. Os
-destinos gravados na tarefa são os resolvidos no momento do `-Register` (passe
-`-Destinations` para fixar outros). Inspeção e remoção:
+gatilho semanal, `pwsh -File copy-backups-to-windows.ps1 -RunBackup -RetainCount 2`,
+principal com o usuário atual (`LogonType S4U`, `RunLevel Highest`),
+`StartWhenAvailable` e limite de execução de 2 horas. Por padrão a tarefa **não
+fixa destinos** — usa a resolução padrão do script (redundância `C:` + `D:`); para
+travar outros destinos, rode `-Register` junto com `-Destinations`. Inspeção e
+remoção:
 
 ```powershell
 Get-ScheduledTask -TaskName 'SGE - Copia semanal de backup SQL Server' | Get-ScheduledTaskInfo

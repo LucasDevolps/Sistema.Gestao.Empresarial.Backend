@@ -223,9 +223,18 @@ function Register-WeeklyTask {
   if (-not $pwsh) { $pwsh = 'pwsh.exe' }
   $scriptPath = Join-Path $PSScriptRoot 'copy-backups-to-windows.ps1'
   $taskName = 'SGE - Copia semanal de backup SQL Server'
+  $arguments = "-NoProfile -NonInteractive -File `"$scriptPath`" -RunBackup -RetainCount $RetainCount"
+  # Só fixa destinos na tarefa quando informados explicitamente; caso contrário a
+  # tarefa usa a resolução padrão do script (redundância C: + D:), o que a mantém
+  # compatível mesmo se o script for atualizado depois.
+  $explicit = @()
+  foreach ($d in $Destinations) { if ($d) { $explicit += $d.Trim() } }
+  if ($Destination) { $explicit += $Destination.Trim() }
+  if ($explicit.Count -gt 0) {
+    $destArg = ($explicit | ForEach-Object { '"{0}"' -f $_ }) -join ','
+    $arguments += " -Destinations $destArg"
+  }
   $destList = Resolve-Destinations
-  $destArg = ($destList | ForEach-Object { '"{0}"' -f $_ }) -join ','
-  $arguments = "-NoProfile -NonInteractive -File `"$scriptPath`" -RunBackup -Destinations $destArg -RetainCount $RetainCount"
 
   $action = New-ScheduledTaskAction -Execute $pwsh -Argument $arguments -WorkingDirectory $RepoRoot
   $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ScheduleDay -At $ScheduleTime
