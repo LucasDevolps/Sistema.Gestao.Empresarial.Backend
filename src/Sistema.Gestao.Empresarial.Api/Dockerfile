@@ -13,7 +13,7 @@ RUN dotnet restore "src/Sistema.Gestao.Empresarial.Api/Sistema.Gestao.Empresaria
 COPY . .
 RUN dotnet publish "src/Sistema.Gestao.Empresarial.Api/Sistema.Gestao.Empresarial.Api.csproj" -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:a4556ed033fa96f984bb7a8d348851cb2d36b1281dd2420070045f664fbb5f94 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1fe86375600b62e6566b465da9553eef0621f13c67f40fe764cd8dbb1dee1497 AS final
 RUN apt-get update \
     && apt-get install --no-install-recommends -y curl \
     && rm -rf /var/lib/apt/lists/*
