@@ -65,6 +65,7 @@ public sealed class EmployeesController(
     [RequirePermission(PermissionCodes.CreateEmployees)]
     [ProducesResponseType<EmployeeResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Create(CreateEmployeeRequest request, CancellationToken cancellationToken)
     {
@@ -88,6 +89,7 @@ public sealed class EmployeesController(
     [ProducesResponseType<EmployeeResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ValidationProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status422UnprocessableEntity)]
     public async Task<IActionResult> Update(
         Guid employeeGuid,

@@ -42,7 +42,7 @@ public sealed partial class EmployeeConcurrencyTests(RealInfrastructureFixture f
             TryCreateEmployeeAsync(email, Guid.NewGuid()));
 
         Assert.Single(attempts, x => x.Employee is not null);
-        Assert.Single(attempts, x => x.Error is DomainException or EmployeePersistenceConflictException);
+        Assert.Single(attempts, x => x.Error is DuplicateBusinessKeyException or EmployeePersistenceConflictException);
         await using var db = fixture.CreateDbContext();
         Assert.Equal(1, await db.Funcionarios.CountAsync(x => x.Email == email));
     }

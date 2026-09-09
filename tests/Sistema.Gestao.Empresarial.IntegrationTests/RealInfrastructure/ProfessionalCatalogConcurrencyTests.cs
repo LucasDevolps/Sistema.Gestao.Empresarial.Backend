@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Sistema.Gestao.Empresarial.Application.ProfessionalCatalogs;
 using Sistema.Gestao.Empresarial.Domain.Common;
-using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.RealInfrastructure;
 
@@ -23,13 +22,50 @@ public sealed class ProfessionalCatalogConcurrencyTests(RealInfrastructureFixtur
             TryCreatePositionAsync(positionName));
 
         Assert.Single(professionAttempts, x => x.Response is not null);
-        Assert.Single(professionAttempts, x => x.Error is DomainException or ProfessionalCatalogPersistenceConflictException);
+        Assert.Single(professionAttempts, x => x.Error is DuplicateBusinessKeyException);
         Assert.Single(positionAttempts, x => x.Response is not null);
-        Assert.Single(positionAttempts, x => x.Error is DomainException or ProfessionalCatalogPersistenceConflictException);
+        Assert.Single(positionAttempts, x => x.Error is DuplicateBusinessKeyException);
 
         await using var verification = fixture.CreateDbContext();
         Assert.Equal(1, await verification.Profissoes.CountAsync(x => x.Nome == professionName));
         Assert.Equal(1, await verification.Cargos.CountAsync(x => x.Nome == positionName));
+    }
+
+    [RealInfrastructureFact]
+    [Trait("Category", "RealInfrastructure")]
+    public async Task VariacaoDeCaixaEEspacos_DeveSerRejeitadaPelaPreChecagem()
+    {
+        var professionName = $"Profissão caixa {fixture.IsolationKey}";
+        var primeira = await TryCreateProfessionAsync(professionName);
+        Assert.NotNull(primeira.Response);
+
+        var maiuscula = await TryCreateProfessionAsync($"  {professionName.ToUpperInvariant()}  ");
+
+        Assert.Null(maiuscula.Response);
+        Assert.IsType<DuplicateBusinessKeyException>(maiuscula.Error);
+
+        await using var verification = fixture.CreateDbContext();
+        Assert.Equal(1, await verification.Profissoes.CountAsync(x => x.Nome == professionName));
+    }
+
+    [RealInfrastructureFact]
+    [Trait("Category", "RealInfrastructure")]
+    public async Task VariacoesDeCaixaConcorrentes_DevemPersistirSomenteUmRegistro()
+    {
+        var professionName = $"Profissão corrida caixa {fixture.IsolationKey}";
+
+        var attempts = await Task.WhenAll(
+            TryCreateProfessionAsync(professionName),
+            TryCreateProfessionAsync(professionName.ToUpperInvariant()),
+            TryCreateProfessionAsync($" {professionName} "));
+
+        Assert.Single(attempts, x => x.Response is not null);
+        Assert.Equal(2, attempts.Count(x => x.Error is DuplicateBusinessKeyException));
+
+        await using var verification = fixture.CreateDbContext();
+        Assert.Equal(
+            1,
+            await verification.Profissoes.CountAsync(x => x.Nome == professionName || x.Nome == professionName.ToUpperInvariant()));
     }
 
     private async Task<CatalogAttempt> TryCreateProfessionAsync(string name)

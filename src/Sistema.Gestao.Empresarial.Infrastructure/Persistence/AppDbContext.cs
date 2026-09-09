@@ -12,6 +12,14 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimeProvider timeProvider)
     : DbContext(options)
 {
+    /// <summary>
+    /// Collation aplicada às colunas de chave natural de negócio comparadas de forma
+    /// insensível a caixa, porém sensível a acento (por exemplo, o título da profissão).
+    /// Torna explícita a insensibilidade a maiúsculas/minúsculas que hoje dependeria da
+    /// collation padrão do servidor e mantém os índices únicos filtrados utilizáveis.
+    /// </summary>
+    internal const string CaseInsensitiveAccentSensitiveCollation = "Latin1_General_CI_AS";
+
     public DbSet<Organizacao> Organizacoes => Set<Organizacao>();
     public DbSet<UnidadeHospitalar> UnidadesHospitalares => Set<UnidadeHospitalar>();
     public DbSet<Setor> Setores => Set<Setor>();
@@ -154,7 +162,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
     {
         builder.ToTable("Profissoes");
         ConfigurarBase(builder);
-        builder.Property(x => x.Nome).HasMaxLength(150).IsRequired();
+        builder.Property(x => x.Nome)
+            .HasMaxLength(150)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
         builder.Property(x => x.Descricao).HasMaxLength(500);
         builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
     }
@@ -163,7 +174,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
     {
         builder.ToTable("Cargos");
         ConfigurarBase(builder);
-        builder.Property(x => x.Nome).HasMaxLength(150).IsRequired();
+        builder.Property(x => x.Nome)
+            .HasMaxLength(150)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
         builder.Property(x => x.Descricao).HasMaxLength(500);
         builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
     }
