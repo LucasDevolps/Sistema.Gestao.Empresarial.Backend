@@ -8,6 +8,9 @@ auditoria HTTP e publicação confiável pela Outbox. O desenho e as decisões d
 
 O checklist de go-live, a política de retenção e o procedimento comprovável de
 backup/restore estão em [`docs/production-readiness.md`](docs/production-readiness.md).
+Persistência, réplica de espera síncrona, backup validado, cópia semanal para
+Windows e failover manual estão detalhados em
+[`docs/backup-and-replication.md`](docs/backup-and-replication.md).
 
 ## Estado atual
 
@@ -84,11 +87,15 @@ o inventário exato pode ser consultado com `git ls-files`.
 │   └── otel-collector-aspire.yml         # extensão local para o Dashboard
 ├── docs/
 │   ├── architecture.md                   # arquitetura, ameaças e decisões de segurança
-│   └── production-readiness.md           # go-live, retenção, backup e restore
+│   ├── production-readiness.md           # go-live, retenção, backup e restore
+│   └── backup-and-replication.md         # persistência, réplica síncrona e failover manual
 ├── scripts/
 │   ├── _db-has-schema.sh                 # verificação interna de schema
 │   ├── apply-migrations-docker.sh        # migrations em job isolado
-│   ├── backup-and-verify-sqlserver.sh    # backup e restore verificável
+│   ├── backup-and-verify-sqlserver.sh    # backup e restore verificável + observabilidade
+│   ├── configure-availability-group.sh   # configura o AG Always On síncrono (réplica)
+│   ├── verify-replica-sync.sh            # saúde/sincronização da réplica
+│   ├── copy-backups-to-windows.ps1       # cópia semanal validada + retenção + Task Scheduler
 │   ├── bootstrap-initial-admin-docker.sh # bootstrap administrativo one-shot
 │   ├── run-real-integration-tests-wsl.sh # testes reais via Docker no WSL
 │   ├── dev-up.ps1 / dev-down.ps1         # ciclo local backend + frontend
@@ -114,6 +121,7 @@ o inventário exato pode ser consultado com `git ls-files`.
 ├── docker-compose.yml                             # topologia segura base
 ├── docker-compose.override.yml                    # desenvolvimento local + Aspire Dashboard
 ├── docker-compose.ci.yml                          # dependências publicadas só em loopback no CI
+├── docker-compose.replica.yml                     # réplica de espera síncrona do SQL Server (opt-in)
 ├── docker-compose.production.yml                  # TLS fornecido externamente
 ├── Sistema.Gestao.Empresarial.sln                 # nove projetos da solução
 ├── SECURITY.md                                    # política para reporte de vulnerabilidades
@@ -149,6 +157,10 @@ Variáveis operacionais que não fazem parte do `.env.example`:
 
 - `SGE_DESIGNTIME_SQLSERVER`: conexão usada pelo design-time do EF Core;
 - `SGE_BACKUP_DIRECTORY`: diretório externo usado pelo script de backup;
+- `SGE_BACKUP_LOG_FILE`: caminho do JSONL de observabilidade do backup
+  (padrão `logs/backup-sqlserver.jsonl`);
+- `SGE_BACKUP_WINDOWS_DESTINATION`: destino fixo da cópia semanal para Windows
+  (padrão resolvido automaticamente entre `D:\Backups\...` e `C:\ProgramData\...`);
 - `SGE_REAL_INFRASTRUCTURE_TESTS=true`: habilita a suíte real;
 - `SGE_TEST_SQLSERVER`, `SGE_TEST_REDIS`, `SGE_TEST_RABBITMQ_HOST`,
   `SGE_TEST_RABBITMQ_PORT`, `SGE_TEST_RABBITMQ_VIRTUAL_HOST`,
@@ -186,6 +198,10 @@ ambiente no formato .NET (`Seção__Chave`). As seções reconhecidas são:
   habilita certificado local, Nginx em loopback e Dashboard em `127.0.0.1:18888`;
 - `docker-compose.ci.yml`: publica SQL Server, Redis e RabbitMQ apenas em loopback
   para os testes do runner e torna a rede padrão não interna;
+- `docker-compose.replica.yml`: overlay opcional que sobe a instância
+  `sqlserver-replica` (volume `sql-replica-data` independente, apenas rede interna)
+  e habilita `MSSQL_ENABLE_HADR` no primário para a réplica de espera síncrona
+  descrita em [`docs/backup-and-replication.md`](docs/backup-and-replication.md);
 - `docker-compose.production.yml`: desliga certificado autogerado e monta
   certificado/chave confiáveis. Use-o explicitamente e sem o override local.
 
