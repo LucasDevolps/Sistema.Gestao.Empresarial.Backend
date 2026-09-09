@@ -120,6 +120,36 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# ===========================================================================
+#  Compatibilidade: re-executa no Windows PowerShell 5.1 quando iniciado no pwsh 7
+# ===========================================================================
+# Este script depende de DISM (Get/Enable-WindowsOptionalFeature) e do provedor
+# 'IIS:\' do módulo WebAdministration. Sob PowerShell 7+ (Core) esses recursos só
+# existem via sessão de compatibilidade com o Windows PowerShell, onde o provedor
+# 'IIS:\' não é montado e o DISM falha com "Classe não registrada". Para que o
+# comando 'pwsh .\scripts\publish-local-iis.ps1' funcione a partir do shell padrão
+# (pwsh 7), aqui o script se re-executa de forma transparente no powershell.exe
+# 5.1, preservando parâmetros, elevação (o processo já está elevado) e exit code.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    $winPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    if (-not (Test-Path $winPowerShell)) {
+        throw "Windows PowerShell 5.1 não encontrado em '$winPowerShell'. Ele é necessário para DISM e para o provedor IIS:\ do módulo WebAdministration."
+    }
+    Write-Host "[compat] PowerShell $($PSVersionTable.PSVersion) (Core) detectado; reexecutando em Windows PowerShell 5.1..." -ForegroundColor Yellow
+    $forwardedArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+    foreach ($boundParam in $PSBoundParameters.GetEnumerator()) {
+        if ($boundParam.Value -is [switch]) {
+            if ($boundParam.Value.IsPresent) { $forwardedArgs += "-$($boundParam.Key)" }
+        }
+        else {
+            $forwardedArgs += "-$($boundParam.Key)"
+            $forwardedArgs += [string]$boundParam.Value
+        }
+    }
+    & $winPowerShell @forwardedArgs
+    exit $LASTEXITCODE
+}
+
 # wsl.exe emite texto em UTF-16LE por padrão; no Windows PowerShell 5.1 isso vira
 # mojibake ("U b u n t u") ao capturar a saída. WSL_UTF8=1 força UTF-8 e cobre
 # tanto 'wsl -l -q' quanto as mensagens de erro do próprio wsl.exe.
@@ -756,14 +786,28 @@ function Publish-Frontend {
         return
     }
 
+    # npm emite avisos (deprecations, audit) em stderr. Com $ErrorActionPreference
+    # ='Stop' + Set-StrictMode, invocar 'npm' diretamente (npm.ps1) promove a 1ª
+    # linha de stderr a erro TERMINANTE antes mesmo de checarmos $LASTEXITCODE.
+    # Solução: rodar via 'cmd /c' (usa npm.cmd, isolado do runspace) com stderr
+    # redirecionado, sob EAP='Continue'; o sucesso/falha vem só do exit code.
     Push-Location $FrontendPath
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        & npm ci; if ($LASTEXITCODE) { throw "npm ci falhou." }
+        & cmd /c 'npm ci 2>&1'
+        if ($LASTEXITCODE) { throw "npm ci falhou (exit $LASTEXITCODE)." }
         if (-not $SkipTests -and ($pkgJson.scripts.PSObject.Properties.Name -contains 'test:ci')) {
-            & npm run test:ci; if ($LASTEXITCODE) { throw "npm run test:ci falhou. A publicação foi interrompida." }
+            & cmd /c 'npm run test:ci 2>&1'
+            if ($LASTEXITCODE) { throw "npm run test:ci falhou (exit $LASTEXITCODE). A publicação foi interrompida." }
         }
-        & cmd /c $buildScript; if ($LASTEXITCODE) { throw "Build do frontend falhou ($buildScript)." }
-    } finally { Pop-Location }
+        & cmd /c "$buildScript 2>&1"
+        if ($LASTEXITCODE) { throw "Build do frontend falhou ($buildScript, exit $LASTEXITCODE)." }
+    }
+    finally {
+        $ErrorActionPreference = $previousEap
+        Pop-Location
+    }
 
     $out = Get-FrontendBuildOutput -Root $FrontendPath
     Write-Log -Level INFO -Message "Artefatos do frontend: $out"
