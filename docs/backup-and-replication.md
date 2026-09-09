@@ -212,10 +212,17 @@ Fluxo por execução:
       (Administradores) e o SID do usuário atual com controle total; sem `Users`.
    b. Copia `.bak` e `.sha256` e **revalida o SHA-256 no destino**; falha nesse
       destino remove a cópia parcial e não interrompe os demais.
-   c. **Só depois** de uma cópia nova validada, aplica a retenção: mantém as
-      `-RetainCount` mais recentes (padrão **2**) e remove as demais, em par
-      `.bak` + `.sha256`.
-   d. Grava um registro JSONL por destino em `logs/backup-windows-copy.jsonl`.
+   c. **Retenção** — só roda **depois** de a cópia nova validada existir: mantém os
+      **`-RetainCount`** backups (par `.bak` + `.sha256`) com carimbo de tempo mais
+      recente e **apaga todos os demais**, incluindo `.sha256` órfãos (sem `.bak`).
+      A ordem usa o **carimbo UTC no nome do arquivo**
+      (`SistemaGestaoEmpresarial-AAAAMMDDTHHMMSSZ.bak`), não o `LastWriteTime` do
+      disco; a cópia recém-gravada nunca é apagada. Padrão `-RetainCount 2`:
+      exemplo com backups de 3 semanas seguidas → mantém a da semana atual e a da
+      anterior, apaga a de 3 semanas atrás. Rode com mais de 3 arquivos e cada
+      execução reduz de volta a 2.
+   d. Grava um registro JSONL por destino (`copies_retained`, `copies_removed`,
+      `orphans_removed`) em `logs/backup-windows-copy.jsonl`.
 6. Grava um registro `event_kind: "summary"` com os destinos OK, os que falharam e
    os pulados por unidade ausente.
 7. **Resultado:** sucesso se ao menos um destino recebeu cópia validada. Se algum
@@ -251,6 +258,20 @@ remoção:
 Get-ScheduledTask -TaskName 'SGE - Copia semanal de backup SQL Server' | Get-ScheduledTaskInfo
 Unregister-ScheduledTask -TaskName 'SGE - Copia semanal de backup SQL Server' -Confirm:$false
 ```
+
+**Se a máquina estiver desligada ou suspensa no horário agendado:**
+
+- `StartWhenAvailable` faz o Windows executar a tarefa **assim que a máquina
+  voltar** (execução de recuperação), dentro da janela padrão do Task Scheduler
+  (~até 10 h após o horário perdido).
+- A tarefa **não liga nem acorda** a máquina — não há `WakeToRun`.
+- Se a máquina ficar desligada por várias semanas, ao voltar roda **uma** execução
+  de recuperação (não uma por semana perdida) e depois retoma o ciclo semanal.
+- O passo `-RunBackup` gera o backup **dentro do WSL**; se o stack Docker/WSL não
+  estiver de pé quando a tarefa (ou a recuperação) disparar, esse passo falha,
+  nenhuma cópia nova é gerada e o resultado fica registrado como falha na tarefa e
+  no JSONL. As cópias já existentes nos destinos **não são apagadas** nesse caso
+  (a retenção só roda após uma cópia nova validada).
 
 ---
 
@@ -315,7 +336,7 @@ Dois arquivos JSONL, uma linha por evento, **sem dados sensíveis**:
 | Arquivo | Origem | Campos principais |
 | --- | --- | --- |
 | `logs/backup-sqlserver.jsonl` | `backup-and-verify-sqlserver.sh` | `timestamp`, `result`, `stage`, `backup_file`, `size_bytes`, `sha256`, `verifyonly`, `dbcc_checkdb` |
-| `logs/backup-windows-copy.jsonl` | `copy-backups-to-windows.ps1` | por destino: `timestamp`, `result`, `backup_file`, `source_path`, `destination_path`, `size_bytes`, `sha256`, `retain_count`, `copies_retained`, `copies_removed`, `error`; e um `event_kind: "summary"` com `destinations_ok`, `destinations_failed`, `skipped_missing_drive` |
+| `logs/backup-windows-copy.jsonl` | `copy-backups-to-windows.ps1` | por destino: `timestamp`, `result`, `backup_file`, `source_path`, `destination_path`, `size_bytes`, `sha256`, `retain_count`, `copies_retained`, `copies_removed`, `orphans_removed`, `error`; e um `event_kind: "summary"` com `destinations_ok`, `destinations_failed`, `skipped_missing_drive` |
 
 Estado de replicação sob demanda via `scripts/verify-replica-sync.sh --json`
 (`synchronization_state`, `synchronization_health`, `last_hardened_lsn`,
