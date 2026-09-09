@@ -186,7 +186,9 @@ a etapa 4 da seção seguinte move a cópia validada para fora do host.
 ## 4. Cópia semanal automatizada para o Windows
 
 `scripts/copy-backups-to-windows.ps1` (PowerShell 7) leva o backup validado para
-um armazenamento Windows independente do host de containers.
+**um ou mais** armazenamentos Windows independentes do host de containers. Por
+padrão replica em **dois discos** (`C:` e `D:`) para redundância: se um disco
+parar, o outro ainda recebe a cópia da semana.
 
 ```powershell
 # Execução manual (gera o backup no WSL e copia):
@@ -201,36 +203,48 @@ Fluxo por execução:
 
 1. Com `-RunBackup`, executa `scripts/backup-and-verify-sqlserver.sh` no WSL.
 2. Seleciona o par `.bak` + `.sha256` mais recente em `artifacts/backups`.
-3. Revalida o SHA-256 na origem; divergência aborta.
-4. Garante o diretório de destino com **ACL restritiva**: herança desabilitada,
-   apenas `NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators` e o usuário atual com
-   controle total; sem `Users`.
-5. Copia `.bak` e `.sha256` e **revalida o SHA-256 no destino**; falha remove a
-   cópia parcial.
-6. **Só depois** de haver uma cópia nova validada, aplica a retenção: mantém as
-   `-RetainCount` cópias mais recentes (padrão **2**) e remove as demais, sempre
-   em par `.bak` + `.sha256`.
-7. Grava um registro JSONL em `logs/backup-windows-copy.jsonl`.
+3. Revalida o SHA-256 na origem; divergência aborta (nenhum destino é tocado).
+4. Descarta destinos cuja unidade não existe (aviso `unidade ausente`), desde que
+   reste ao menos um destino utilizável.
+5. Para **cada** destino restante:
+   a. Garante o diretório com **ACL restritiva** (SIDs, sempre resolvíveis):
+      herança desabilitada, apenas `S-1-5-18` (SYSTEM), `S-1-5-32-544`
+      (Administradores) e o SID do usuário atual com controle total; sem `Users`.
+   b. Copia `.bak` e `.sha256` e **revalida o SHA-256 no destino**; falha nesse
+      destino remove a cópia parcial e não interrompe os demais.
+   c. **Só depois** de uma cópia nova validada, aplica a retenção: mantém as
+      `-RetainCount` mais recentes (padrão **2**) e remove as demais, em par
+      `.bak` + `.sha256`.
+   d. Grava um registro JSONL por destino em `logs/backup-windows-copy.jsonl`.
+6. Grava um registro `event_kind: "summary"` com os destinos OK, os que falharam e
+   os pulados por unidade ausente.
+7. **Resultado:** sucesso se ao menos um destino recebeu cópia validada. Se algum
+   destino falhou (mas outro funcionou), o script conclui os demais e então
+   termina com erro — a redundância é preservada e a falha fica visível no
+   resultado da tarefa agendada. Falha em todos os destinos aborta.
 
-### Destino e diversidade de disco
+### Destinos e diversidade de disco
 
-Resolução automática do destino:
+Resolução dos destinos (`-Destinations`, aceita vários):
 
-1. `SGE_BACKUP_WINDOWS_DESTINATION`, se definida; senão
-2. `D:\Backups\SistemaGestaoEmpresarial\SQLServer` quando `D:` for disco local
-   fixo (`DriveType = 3`) e diferente do disco do repositório; senão
-3. `C:\ProgramData\SistemaGestaoEmpresarial\Backups\SQLServer`.
+1. `-Destinations` / `-Destination` na linha de comando; senão
+2. `SGE_BACKUP_WINDOWS_DESTINATION`, lista separada por `;`; senão
+3. **padrão redundante**:
+   - `C:\ProgramData\SistemaGestaoEmpresarial\Backups\SQLServer`
+   - `D:\Backups\SistemaGestaoEmpresarial\SQLServer`
 
-`-Destination` sobrepõe a resolução. Para destino remoto, aponte para um
-compartilhamento **já autenticado e criptografado** (SMB 3 com criptografia ou
-equivalente); o script não trafega credenciais.
+Para destino remoto, aponte para um compartilhamento **já autenticado e
+criptografado** (SMB 3 com criptografia ou equivalente); o script não trafega
+credenciais. `-RetainCount` aplica-se por destino.
 
 ### Tarefa agendada
 
 `-Register` cria/atualiza a tarefa **"SGE - Copia semanal de backup SQL Server"**:
-gatilho semanal, `pwsh -File copy-backups-to-windows.ps1 -RunBackup`, principal com
-o usuário atual (`LogonType S4U`, `RunLevel Highest`), `StartWhenAvailable` e
-limite de execução de 2 horas. Inspeção e remoção:
+gatilho semanal, `pwsh -File copy-backups-to-windows.ps1 -RunBackup -Destinations
+<C:...>,<D:...> -RetainCount 2`, principal com o usuário atual (`LogonType S4U`,
+`RunLevel Highest`), `StartWhenAvailable` e limite de execução de 2 horas. Os
+destinos gravados na tarefa são os resolvidos no momento do `-Register` (passe
+`-Destinations` para fixar outros). Inspeção e remoção:
 
 ```powershell
 Get-ScheduledTask -TaskName 'SGE - Copia semanal de backup SQL Server' | Get-ScheduledTaskInfo
@@ -300,7 +314,7 @@ Dois arquivos JSONL, uma linha por evento, **sem dados sensíveis**:
 | Arquivo | Origem | Campos principais |
 | --- | --- | --- |
 | `logs/backup-sqlserver.jsonl` | `backup-and-verify-sqlserver.sh` | `timestamp`, `result`, `stage`, `backup_file`, `size_bytes`, `sha256`, `verifyonly`, `dbcc_checkdb` |
-| `logs/backup-windows-copy.jsonl` | `copy-backups-to-windows.ps1` | `timestamp`, `result`, `backup_file`, `source_path`, `destination_path`, `size_bytes`, `sha256`, `retain_count`, `copies_retained`, `copies_removed`, `error` |
+| `logs/backup-windows-copy.jsonl` | `copy-backups-to-windows.ps1` | por destino: `timestamp`, `result`, `backup_file`, `source_path`, `destination_path`, `size_bytes`, `sha256`, `retain_count`, `copies_retained`, `copies_removed`, `error`; e um `event_kind: "summary"` com `destinations_ok`, `destinations_failed`, `skipped_missing_drive` |
 
 Estado de replicação sob demanda via `scripts/verify-replica-sync.sh --json`
 (`synchronization_state`, `synchronization_health`, `last_hardened_lsn`,

@@ -159,8 +159,8 @@ Variáveis operacionais que não fazem parte do `.env.example`:
 - `SGE_BACKUP_DIRECTORY`: diretório externo usado pelo script de backup;
 - `SGE_BACKUP_LOG_FILE`: caminho do JSONL de observabilidade do backup
   (padrão `logs/backup-sqlserver.jsonl`);
-- `SGE_BACKUP_WINDOWS_DESTINATION`: destino fixo da cópia semanal para Windows
-  (padrão resolvido automaticamente entre `D:\Backups\...` e `C:\ProgramData\...`);
+- `SGE_BACKUP_WINDOWS_DESTINATION`: destino(s) da cópia semanal para Windows, lista
+  separada por `;` (padrão redundante: `C:\ProgramData\...` **e** `D:\Backups\...`);
 - `SGE_REAL_INFRASTRUCTURE_TESTS=true`: habilita a suíte real;
 - `SGE_TEST_SQLSERVER`, `SGE_TEST_REDIS`, `SGE_TEST_RABBITMQ_HOST`,
   `SGE_TEST_RABBITMQ_PORT`, `SGE_TEST_RABBITMQ_VIRTUAL_HOST`,
