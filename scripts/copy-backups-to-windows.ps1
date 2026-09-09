@@ -1,8 +1,9 @@
 #Requires -Version 7
 <#
 .SYNOPSIS
-  Copia o backup validado mais recente do SQL Server para um armazenamento
-  Windows fora do host de containers e aplica a politica de retencao de 2 copias.
+  Copia o backup validado mais recente do SQL Server para um ou mais
+  armazenamentos Windows (redundancia entre discos) e aplica a politica de
+  retencao por destino.
 
 .DESCRIPTION
   Fluxo:
@@ -10,30 +11,40 @@
        que gera o .bak com CHECKSUM, RESTORE VERIFYONLY, SHA-256 e DBCC CHECKDB.
     2. Seleciona o par .bak + .sha256 mais recente em -BackupSource.
     3. Revalida o SHA-256 na origem; aborta se divergir.
-    4. Garante o diretorio de destino com ACL restritiva (SYSTEM, Administradores
-       e o usuario atual; sem herança; sem grupo Users).
-    5. Copia .bak e .sha256 e revalida o SHA-256 no destino.
-    6. Somente apos uma copia nova validada, remove as copias antigas mantendo as
-       -RetainCount mais recentes.
-    7. Grava um registro JSONL de observabilidade (sem segredos).
+    4. Para CADA destino em -Destinations:
+       a. Garante o diretorio com ACL restritiva (SYSTEM, Administradores e o
+          usuario atual; sem herança; sem grupo Users).
+       b. Copia .bak e .sha256 e revalida o SHA-256 no destino.
+       c. Somente apos uma copia nova validada, remove as antigas mantendo as
+          -RetainCount mais recentes.
+       d. Grava um registro JSONL de observabilidade (sem segredos).
+    5. Sucesso se PELO MENOS UM destino recebeu uma copia validada. Se algum
+       destino falhar, o script termina com erro apos concluir os demais
+       (a redundancia e preservada, mas a falha fica visivel).
 
-  Destino automatico: usa D:\Backups\SistemaGestaoEmpresarial\SQLServer quando o
-  volume D: existir e for um disco fixo diferente do disco do repositorio; caso
-  contrario C:\ProgramData\SistemaGestaoEmpresarial\Backups\SQLServer.
+  Destinos padrao (redundancia C: + D:), usados quando -Destinations e a variavel
+  SGE_BACKUP_WINDOWS_DESTINATION nao sao informados:
+    - C:\ProgramData\SistemaGestaoEmpresarial\Backups\SQLServer
+    - D:\Backups\SistemaGestaoEmpresarial\SQLServer
+  Destinos em discos ausentes/nao fixos sao ignorados com aviso (nao derrubam a
+  execucao) desde que ao menos um destino valido reste.
 
-  Nao ha senhas neste script. Para destino remoto, aponte -Destination para um
+  Nao ha senhas neste script. Para destino remoto, aponte para um
   compartilhamento ja autenticado/criptografado (SMB 3 com criptografia ou
   equivalente); este script nao trafega credenciais.
 
 .PARAMETER BackupSource
   Diretorio com os .bak e .sha256. Padrao: <repo>\artifacts\backups.
 
+.PARAMETER Destinations
+  Um ou mais diretorios de destino (redundancia). Padrao: os dois destinos C:/D:
+  acima, ou a lista em SGE_BACKUP_WINDOWS_DESTINATION separada por ';'.
+
 .PARAMETER Destination
-  Diretorio de destino. Padrao: resolvido automaticamente (ver acima) ou pela
-  variavel de ambiente SGE_BACKUP_WINDOWS_DESTINATION.
+  Compatibilidade: um unico destino. Se informado, e adicionado a -Destinations.
 
 .PARAMETER RetainCount
-  Quantidade de copias validas a manter no destino. Padrao: 2 (minimo 1).
+  Quantidade de copias validas a manter POR destino. Padrao: 2 (minimo 1).
 
 .PARAMETER RunBackup
   Executa o script de backup no WSL antes de copiar.
@@ -55,10 +66,14 @@
 
 .EXAMPLE
   pwsh ./scripts/copy-backups-to-windows.ps1 -Register
+
+.EXAMPLE
+  pwsh ./scripts/copy-backups-to-windows.ps1 -RunBackup -Destinations 'C:\ProgramData\SGE\bak','E:\bak'
 #>
 [CmdletBinding()]
 param(
   [string]$BackupSource,
+  [string[]]$Destinations,
   [string]$Destination,
   [ValidateRange(1, 50)][int]$RetainCount = 2,
   [switch]$RunBackup,
@@ -75,6 +90,11 @@ Set-StrictMode -Version Latest
 
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $LogFile = Join-Path $RepoRoot 'logs\backup-windows-copy.jsonl'
+
+$DefaultDestinations = @(
+  'C:\ProgramData\SistemaGestaoEmpresarial\Backups\SQLServer'
+  'D:\Backups\SistemaGestaoEmpresarial\SQLServer'
+)
 
 function Write-ObservabilityRecord {
   param([hashtable]$Fields)
@@ -99,34 +119,103 @@ function Read-ExpectedHash {
   return $token.ToLowerInvariant()
 }
 
-function Resolve-DefaultDestination {
-  if ($env:SGE_BACKUP_WINDOWS_DESTINATION) { return $env:SGE_BACKUP_WINDOWS_DESTINATION }
-  $preferred = 'D:\Backups\SistemaGestaoEmpresarial\SQLServer'
-  $fallback = 'C:\ProgramData\SistemaGestaoEmpresarial\Backups\SQLServer'
-  $repoDrive = (Split-Path -Qualifier $RepoRoot).TrimEnd(':')
-  $dDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='D:'" -ErrorAction SilentlyContinue
-  # DriveType 3 = disco local fixo. Preferimos diversidade de disco fisico.
-  if ($dDrive -and $dDrive.DriveType -eq 3 -and $repoDrive -ne 'D') { return $preferred }
-  return $fallback
+function Resolve-Destinations {
+  $list = [System.Collections.Generic.List[string]]::new()
+  foreach ($d in $Destinations) { if ($d) { $list.Add($d.Trim()) } }
+  if ($Destination) { $list.Add($Destination.Trim()) }
+  if ($list.Count -eq 0 -and $env:SGE_BACKUP_WINDOWS_DESTINATION) {
+    foreach ($d in ($env:SGE_BACKUP_WINDOWS_DESTINATION -split ';')) { if ($d.Trim()) { $list.Add($d.Trim()) } }
+  }
+  if ($list.Count -eq 0) { foreach ($d in $DefaultDestinations) { $list.Add($d) } }
+  # Remove duplicados preservando a ordem.
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $result = foreach ($d in $list) { if ($seen.Add($d)) { $d } }
+  return @($result)
+}
+
+# Retorna $true quando o caminho e utilizavel: unidade existente e, para caminhos
+# com letra de unidade, disco local fixo (DriveType 3) ou removivel/rede ja montada.
+function Test-DestinationUsable {
+  param([string]$Path)
+  $qualifier = Split-Path -Qualifier $Path -ErrorAction SilentlyContinue
+  if (-not $qualifier) { return $true }  # UNC ou relativo: deixa o Copy-Item decidir.
+  $letter = $qualifier.TrimEnd(':')
+  $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='${letter}:'" -ErrorAction SilentlyContinue
+  # 2 = removivel, 3 = fixo, 4 = rede. Recusamos apenas o que nao existe.
+  return [bool]$disk
 }
 
 function Set-RestrictiveAcl {
   param([string]$Path)
-  # Sem herança; apenas SYSTEM, Administradores e o usuario atual com controle total.
-  $acl = New-Object System.Security.AccessControl.DirectorySecurity
+  # Sem herança; apenas SYSTEM, Administradores e o usuario atual com controle
+  # total. Usa SIDs (sempre resolviveis) em vez de nomes.
+  $sids = [ordered]@{}
+  $sids['S-1-5-18']      = $null  # NT AUTHORITY\SYSTEM
+  $sids['S-1-5-32-544']  = $null  # BUILTIN\Administrators
+  $me = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+  $sids[$me] = $null
+
+  $acl = Get-Acl -Path $Path
   $acl.SetAccessRuleProtection($true, $false)
-  $identities = @(
-    'NT AUTHORITY\SYSTEM',
-    'BUILTIN\Administrators',
-    [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-  ) | Select-Object -Unique
-  foreach ($id in $identities) {
+  # Remove regras explicitas herdadas/pre-existentes.
+  foreach ($rule in @($acl.Access | Where-Object { -not $_.IsInherited })) {
+    [void]$acl.RemoveAccessRule($rule)
+  }
+  foreach ($sid in $sids.Keys) {
     $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-      $id, 'FullControl',
+      (New-Object System.Security.Principal.SecurityIdentifier($sid)),
+      [System.Security.AccessControl.FileSystemRights]::FullControl,
       'ContainerInherit,ObjectInherit', 'None', 'Allow')
     $acl.AddAccessRule($rule)
   }
   Set-Acl -Path $Path -AclObject $acl
+}
+
+# Copia + valida + aplica retencao em UM destino. Lanca em falha.
+function Copy-ToDestination {
+  param(
+    [string]$Dest,
+    [System.IO.FileInfo]$SourceFile,
+    [string]$ExpectedHash
+  )
+  $sourceBak = $SourceFile.FullName
+  $sourceSha = "$sourceBak.sha256"
+
+  if (-not (Test-Path $Dest)) { New-Item -ItemType Directory -Force -Path $Dest | Out-Null }
+  Set-RestrictiveAcl -Path $Dest
+
+  $destBak = Join-Path $Dest $SourceFile.Name
+  $destSha = "$destBak.sha256"
+  Copy-Item -Path $sourceBak -Destination $destBak -Force
+  Copy-Item -Path $sourceSha -Destination $destSha -Force
+
+  $destActual = Get-Sha256Hex $destBak
+  if ($destActual -ne $ExpectedHash) {
+    Remove-Item -Path $destBak, $destSha -Force -ErrorAction SilentlyContinue
+    throw "SHA-256 nao confere apos copiar para $Dest (esperado $ExpectedHash, obtido $destActual). Copia removida."
+  }
+  $destSize = (Get-Item $destBak).Length
+
+  $validCopies = @(
+    Get-ChildItem -Path $Dest -Filter '*.bak' -File |
+      Where-Object { Test-Path "$($_.FullName).sha256" } |
+      Sort-Object LastWriteTimeUtc -Descending
+  )
+  $removed = @()
+  if ($validCopies.Count -gt $RetainCount) {
+    foreach ($old in ($validCopies | Select-Object -Skip $RetainCount)) {
+      Remove-Item -Path $old.FullName, "$($old.FullName).sha256" -Force
+      $removed += $old.Name
+    }
+  }
+
+  return [pscustomobject]@{
+    Destination     = $Dest
+    DestinationPath = $destBak
+    SizeBytes       = $destSize
+    CopiesRetained  = [Math]::Min($validCopies.Count, $RetainCount)
+    CopiesRemoved   = $removed
+  }
 }
 
 function Register-WeeklyTask {
@@ -134,9 +223,9 @@ function Register-WeeklyTask {
   if (-not $pwsh) { $pwsh = 'pwsh.exe' }
   $scriptPath = Join-Path $PSScriptRoot 'copy-backups-to-windows.ps1'
   $taskName = 'SGE - Copia semanal de backup SQL Server'
-  $arguments = "-NoProfile -NonInteractive -File `"$scriptPath`" -RunBackup"
-  if ($Destination) { $arguments += " -Destination `"$Destination`"" }
-  $arguments += " -RetainCount $RetainCount"
+  $destList = Resolve-Destinations
+  $destArg = ($destList | ForEach-Object { '"{0}"' -f $_ }) -join ','
+  $arguments = "-NoProfile -NonInteractive -File `"$scriptPath`" -RunBackup -Destinations $destArg -RetainCount $RetainCount"
 
   $action = New-ScheduledTaskAction -Execute $pwsh -Argument $arguments -WorkingDirectory $RepoRoot
   $trigger = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ScheduleDay -At $ScheduleTime
@@ -145,6 +234,7 @@ function Register-WeeklyTask {
 
   Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
   Write-Host "Tarefa agendada '$taskName' registrada: toda $ScheduleDay as $ScheduleTime." -ForegroundColor Green
+  Write-Host "Destinos: $($destList -join ' | ')" -ForegroundColor DarkGray
   Write-Host "Comando: $pwsh $arguments" -ForegroundColor DarkGray
 }
 
@@ -154,7 +244,7 @@ if ($Register) {
 }
 
 if (-not $BackupSource) { $BackupSource = Join-Path $RepoRoot 'artifacts\backups' }
-if (-not $Destination) { $Destination = Resolve-DefaultDestination }
+$targets = Resolve-Destinations
 
 try {
   if ($RunBackup) {
@@ -174,73 +264,84 @@ try {
   if (-not $latest) { throw "Nenhum backup .bak com .sha256 correspondente em $BackupSource" }
 
   $sourceBak = $latest.FullName
-  $sourceSha = "$sourceBak.sha256"
   Write-Host "== Backup selecionado: $($latest.Name) ==" -ForegroundColor Cyan
 
-  $expected = Read-ExpectedHash $sourceSha
+  $expected = Read-ExpectedHash "$sourceBak.sha256"
   $actual = Get-Sha256Hex $sourceBak
   if ($actual -ne $expected) {
     throw "SHA-256 da origem nao confere para $($latest.Name) (esperado $expected, obtido $actual)."
   }
   Write-Host '   hash da origem validado.' -ForegroundColor DarkGray
 
-  if (-not (Test-Path $Destination)) {
-    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-  }
-  Set-RestrictiveAcl -Path $Destination
-  Write-Host "== Destino: $Destination (ACL restritiva aplicada) ==" -ForegroundColor Cyan
+  # Filtra destinos cujo disco nao existe (ex.: D: ausente), desde que reste um.
+  $usable = @($targets | Where-Object { Test-DestinationUsable $_ })
+  $skipped = @($targets | Where-Object { $_ -notin $usable })
+  foreach ($s in $skipped) { Write-Warning "Destino ignorado (unidade ausente): $s" }
+  if ($usable.Count -eq 0) { throw "Nenhum destino utilizavel entre: $($targets -join ', ')" }
 
-  $destBak = Join-Path $Destination $latest.Name
-  $destSha = "$destBak.sha256"
-  if (Test-Path $destBak) {
-    Write-Host '   copia ja existe no destino; revalidando.' -ForegroundColor DarkGray
-  }
-  Copy-Item -Path $sourceBak -Destination $destBak -Force
-  Copy-Item -Path $sourceSha -Destination $destSha -Force
-
-  $destActual = Get-Sha256Hex $destBak
-  if ($destActual -ne $expected) {
-    Remove-Item -Path $destBak, $destSha -Force -ErrorAction SilentlyContinue
-    throw "SHA-256 do destino nao confere apos a copia (esperado $expected, obtido $destActual). Copia removida."
-  }
-  $destSize = (Get-Item $destBak).Length
-  Write-Host '   copia no destino validada.' -ForegroundColor DarkGray
-
-  # Retencao: so remove antigos DEPOIS de uma copia nova validada existir.
-  $validCopies = Get-ChildItem -Path $Destination -Filter '*.bak' -File |
-    Where-Object { Test-Path "$($_.FullName).sha256" } |
-    Sort-Object LastWriteTimeUtc -Descending
-  $removed = @()
-  if ($validCopies.Count -gt $RetainCount) {
-    foreach ($old in $validCopies | Select-Object -Skip $RetainCount) {
-      Remove-Item -Path $old.FullName, "$($old.FullName).sha256" -Force
-      $removed += $old.Name
-      Write-Host "   removido (retencao): $($old.Name)" -ForegroundColor DarkGray
+  $ok = @()
+  $failed = @()
+  foreach ($dest in $usable) {
+    try {
+      Write-Host "== Destino: $dest ==" -ForegroundColor Cyan
+      $r = Copy-ToDestination -Dest $dest -SourceFile $latest -ExpectedHash $expected
+      $ok += $r
+      Write-Host "   copia validada em $($r.DestinationPath) (retidas: $($r.CopiesRetained), removidas: $($r.CopiesRemoved.Count))" -ForegroundColor DarkGray
+      Write-ObservabilityRecord @{
+        result           = 'success'
+        backup_file      = $latest.Name
+        source_path      = $sourceBak
+        destination_path = $r.DestinationPath
+        size_bytes       = $r.SizeBytes
+        sha256           = $expected
+        retain_count     = $RetainCount
+        copies_retained  = $r.CopiesRetained
+        copies_removed   = $r.CopiesRemoved
+      }
+    }
+    catch {
+      $failed += [pscustomobject]@{ Destination = $dest; Error = $_.Exception.Message }
+      Write-Warning "Falha no destino $dest : $($_.Exception.Message)"
+      Write-ObservabilityRecord @{
+        result           = 'failure'
+        backup_file      = $latest.Name
+        source_path      = $sourceBak
+        destination_path = $dest
+        sha256           = $expected
+        error            = $_.Exception.Message
+      }
     }
   }
 
+  $summaryResult = 'failure'
+  if ($ok.Count -gt 0) { $summaryResult = if ($failed.Count -gt 0) { 'partial' } else { 'success' } }
   Write-ObservabilityRecord @{
-    result           = 'success'
-    backup_file      = $latest.Name
-    source_path      = $sourceBak
-    destination_path = $destBak
-    size_bytes       = $destSize
-    sha256           = $expected
-    retain_count     = $RetainCount
-    copies_retained  = [Math]::Min($validCopies.Count, $RetainCount)
-    copies_removed   = $removed
+    result                = $summaryResult
+    event_kind            = 'summary'
+    backup_file           = $latest.Name
+    destinations_ok       = @($ok | ForEach-Object { $_.Destination })
+    destinations_failed   = @($failed | ForEach-Object { $_.Destination })
+    skipped_missing_drive = $skipped
+  }
+
+  if ($ok.Count -eq 0) {
+    throw "Todos os destinos falharam: $($failed.Destination -join ', ')"
   }
 
   Write-Host ''
-  Write-Host "Backup copiado e validado em: $destBak" -ForegroundColor Green
+  Write-Host "Backup replicado em $($ok.Count) destino(s): $($ok.Destination -join ' | ')" -ForegroundColor Green
   Write-Host "Registro de observabilidade: $LogFile" -ForegroundColor Green
+
+  if ($failed.Count -gt 0) {
+    throw "Redundancia parcial: $($failed.Count) destino(s) falharam ($($failed.Destination -join ', ')). Copia mantida nos destinos OK."
+  }
 }
 catch {
   Write-ObservabilityRecord @{
-    result           = 'failure'
-    error            = $_.Exception.Message
-    source_dir       = $BackupSource
-    destination_path = $Destination
+    result     = 'failure'
+    event_kind = 'run'
+    error      = $_.Exception.Message
+    source_dir = $BackupSource
   }
   throw
 }
