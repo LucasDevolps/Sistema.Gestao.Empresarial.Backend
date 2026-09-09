@@ -1,0 +1,97 @@
+# Critical backend areas. Paths are rooted at the repository root.
+
+# GitHub governance, CI/CD and dependency update automation.
+/.github/CODEOWNERS @LucasDevolps
+/.github/workflows/ @LucasDevolps
+/.github/dependabot.yml @LucasDevolps
+/SECURITY.md @LucasDevolps
+
+# Environment, SDK, build policy and the dependency supply chain.
+/.env.example @LucasDevolps
+/.gitignore @LucasDevolps
+/Directory.Build.props @LucasDevolps
+/global.json @LucasDevolps
+/dotnet-tools.json @LucasDevolps
+/Sistema.Gestao.Empresarial.sln @LucasDevolps
+/src/**/*.csproj @LucasDevolps
+/src/**/packages.lock.json @LucasDevolps
+/tests/**/*.csproj @LucasDevolps
+/tests/**/packages.lock.json @LucasDevolps
+
+# Container builds and Compose environments; Worker is covered below.
+/.dockerignore @LucasDevolps
+/docker-compose*.yml @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Api/Dockerfile @LucasDevolps
+
+# Deployment includes Nginx/TLS, SQL Server setup and OpenTelemetry collectors.
+/deploy/ @LucasDevolps
+# Operational scripts include migrations, backup, admin bootstrap and startup.
+/scripts/ @LucasDevolps
+
+# API startup, HTTP hardening, authentication and permission administration.
+/src/Sistema.Gestao.Empresarial.Api/Program.cs @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Api/Security/ @LucasDevolps
+# Every endpoint: authentication, authorization and organizational isolation surface.
+/src/Sistema.Gestao.Empresarial.Api/Controllers/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Api/appsettings*.json @LucasDevolps
+
+# Identity, authorization, JWT, credential hashing and session protection.
+/src/Sistema.Gestao.Empresarial.Application/Authentication/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Application/Authorization/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Application/Identity/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Seguranca/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Security/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Authorization/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Identity/ @LucasDevolps
+
+# Organizational boundaries, employees and cross-organization tenant isolation.
+/src/Sistema.Gestao.Empresarial.Application/Employees/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Application/Organizations/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Employees/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Organizations/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Organizacoes/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Pessoas/ @LucasDevolps
+
+# Initial administrator provisioning, including its executable entry point.
+/src/Sistema.Gestao.Empresarial.Application/Bootstrap/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Bootstrap/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Bootstrap/ @LucasDevolps
+
+# EF Core context, constraints, design-time configuration and all migrations.
+/src/Sistema.Gestao.Empresarial.Infrastructure/Persistence/ @LucasDevolps
+
+# Integration contracts, durable Inbox/Outbox and RabbitMQ messaging.
+/src/Sistema.Gestao.Empresarial.Application/Integration/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Integracao/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Messaging/ @LucasDevolps
+
+# HTTP/business audit records and retention of audit evidence.
+/src/Sistema.Gestao.Empresarial.Api/Auditing/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Domain/Auditoria/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Auditing/ @LucasDevolps
+
+# Service registration, validated options, Redis keys, readiness and telemetry.
+/src/Sistema.Gestao.Empresarial.Application/DependencyInjection.cs @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/DependencyInjection.cs @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Configuration/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Caching/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Health/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Infrastructure/Observability/ @LucasDevolps
+
+# Aspire orchestration and background processing, including their configuration.
+/src/Sistema.Gestao.Empresarial.AppHost/ @LucasDevolps
+/src/Sistema.Gestao.Empresarial.Worker/ @LucasDevolps
+
+# Tests guarding security, audit, persistence and real infrastructure behavior.
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Security/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Authentication/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Authorization/ @LucasDevolps
+# Tests asserting cross-organization isolation for employees and org catalogs.
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Employees/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Organizations/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Bootstrap/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Auditing/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Architecture/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/RealInfrastructure/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Persistence/ @LucasDevolps
+/tests/Sistema.Gestao.Empresarial.IntegrationTests/Messaging/ @LucasDevolps
