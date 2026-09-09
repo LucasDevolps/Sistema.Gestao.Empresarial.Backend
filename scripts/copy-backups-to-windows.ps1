@@ -15,8 +15,12 @@
        a. Garante o diretorio com ACL restritiva (SYSTEM, Administradores e o
           usuario atual; sem herança; sem grupo Users).
        b. Copia .bak e .sha256 e revalida o SHA-256 no destino.
-       c. Somente apos uma copia nova validada, remove as antigas mantendo as
-          -RetainCount mais recentes.
+       c. Retencao: SOMENTE apos a copia nova validada existir, mantem os
+          -RetainCount backups (par .bak + .sha256) com carimbo de tempo mais
+          recente e APAGA todos os demais, inclusive .sha256 orfaos. A ordem usa
+          o carimbo UTC no NOME do arquivo. A copia recem-gravada nunca e apagada.
+          Ex. (RetainCount=2): semana atual e anterior ficam; a de 3 semanas atras
+          e apagada.
        d. Grava um registro JSONL de observabilidade (sem segredos).
     5. Sucesso se PELO MENOS UM destino recebeu uma copia validada. Se algum
        destino falhar, o script termina com erro apos concluir os demais
@@ -44,7 +48,8 @@
   Compatibilidade: um unico destino. Se informado, e adicionado a -Destinations.
 
 .PARAMETER RetainCount
-  Quantidade de copias validas a manter POR destino. Padrao: 2 (minimo 1).
+  Quantos backups manter POR destino (os mais recentes). Os demais sao apagados a
+  cada execucao. Padrao: 2 (minimo 1).
 
 .PARAMETER RunBackup
   Executa o script de backup no WSL antes de copiar.
@@ -119,6 +124,67 @@ function Read-ExpectedHash {
   return $token.ToLowerInvariant()
 }
 
+# Instante do backup usado para ordenar por "mais recente". Prefere o carimbo UTC
+# no NOME do arquivo (SistemaGestaoEmpresarial-YYYYMMDDTHHMMSSZ.bak), gravado pelo
+# backup-and-verify-sqlserver.sh; recorre ao LastWriteTimeUtc so quando o nome nao
+# casa. Independe de metadado de filesystem e de relogio local.
+function Get-BackupInstant {
+  param([System.IO.FileInfo]$File)
+  if ($File.Name -match '(\d{8}T\d{6}Z)\.bak$') {
+    $parsed = [datetime]::MinValue
+    if ([datetime]::TryParseExact(
+        $Matches[1], "yyyyMMdd'T'HHmmss'Z'",
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal,
+        [ref]$parsed)) {
+      return $parsed
+    }
+  }
+  return $File.LastWriteTimeUtc
+}
+
+# Aplica a retencao em UM diretorio: mantem os $Keep backups (par .bak + .sha256)
+# com instante mais recente e apaga os demais; remove tambem .sha256 orfaos.
+# Retorna [pscustomobject] com Retained/Removed (nomes dos .bak).
+function Invoke-Retention {
+  param(
+    [string]$Directory,
+    [int]$Keep,
+    [string]$ProtectPath  # .bak recem-gravado nesta execucao; nunca e removido.
+  )
+  $pairs = @(
+    Get-ChildItem -Path $Directory -Filter '*.bak' -File |
+      Where-Object { Test-Path "$($_.FullName).sha256" } |
+      Sort-Object -Property @{ Expression = { Get-BackupInstant $_ } } -Descending
+  )
+  $keepSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  foreach ($f in ($pairs | Select-Object -First $Keep)) { [void]$keepSet.Add($f.FullName) }
+  if ($ProtectPath) { [void]$keepSet.Add((Convert-Path $ProtectPath)) }
+
+  $removed = @()
+  foreach ($f in $pairs) {
+    if ($keepSet.Contains($f.FullName)) { continue }
+    Remove-Item -Path $f.FullName, "$($f.FullName).sha256" -Force
+    $removed += $f.Name
+  }
+
+  # .sha256 sem .bak correspondente (ex.: .bak apagado manualmente).
+  $orphans = @()
+  foreach ($s in Get-ChildItem -Path $Directory -Filter '*.bak.sha256' -File) {
+    $bak = $s.FullName.Substring(0, $s.FullName.Length - '.sha256'.Length)
+    if (-not (Test-Path -LiteralPath $bak)) {
+      Remove-Item -LiteralPath $s.FullName -Force
+      $orphans += $s.Name
+    }
+  }
+
+  return [pscustomobject]@{
+    Retained       = @($pairs | Select-Object -First $Keep | ForEach-Object { $_.Name })
+    Removed        = $removed
+    OrphansRemoved = $orphans
+  }
+}
+
 function Resolve-Destinations {
   $list = [System.Collections.Generic.List[string]]::new()
   foreach ($d in $Destinations) { if ($d) { $list.Add($d.Trim()) } }
@@ -148,27 +214,37 @@ function Test-DestinationUsable {
 function Set-RestrictiveAcl {
   param([string]$Path)
   # Sem herança; apenas SYSTEM, Administradores e o usuario atual com controle
-  # total. Usa SIDs (sempre resolviveis) em vez de nomes.
-  $sids = [ordered]@{}
-  $sids['S-1-5-18']      = $null  # NT AUTHORITY\SYSTEM
-  $sids['S-1-5-32-544']  = $null  # BUILTIN\Administrators
-  $me = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
-  $sids[$me] = $null
+  # total. Usa SIDs (sempre resolviveis) em vez de nomes. Idempotente: se a ACL ja
+  # esta protegida e com exatamente essas 3 identidades, nao reescreve (evita a
+  # escrita privilegiada em reexecucoes).
+  $wantSids = @(
+    [System.Security.Principal.SecurityIdentifier]'S-1-5-18'      # SYSTEM
+    [System.Security.Principal.SecurityIdentifier]'S-1-5-32-544'  # Administrators
+    ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User
+  )
+  $wantKey = ($wantSids | ForEach-Object { $_.Value } | Sort-Object -Unique) -join ';'
+  $full = [System.Security.AccessControl.FileSystemRights]::FullControl
 
-  $acl = Get-Acl -Path $Path
+  $acl = Get-Acl -LiteralPath $Path
+  $rules = @($acl.Access)
+  $currentKey = ($rules | ForEach-Object {
+      try { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }
+      catch { $_.IdentityReference.Value }
+    } | Sort-Object -Unique) -join ';'
+  $allFullAllow = @($rules | Where-Object {
+      ($_.FileSystemRights -band $full) -ne $full -or $_.AccessControlType -ne 'Allow'
+    }).Count -eq 0
+  if ($acl.AreAccessRulesProtected -and $allFullAllow -and $currentKey -eq $wantKey) {
+    return
+  }
+
   $acl.SetAccessRuleProtection($true, $false)
-  # Remove regras explicitas herdadas/pre-existentes.
-  foreach ($rule in @($acl.Access | Where-Object { -not $_.IsInherited })) {
-    [void]$acl.RemoveAccessRule($rule)
+  foreach ($rule in $rules) { [void]$acl.RemoveAccessRule($rule) }
+  foreach ($sid in $wantSids) {
+    $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+      $sid, $full, 'ContainerInherit,ObjectInherit', 'None', 'Allow')))
   }
-  foreach ($sid in $sids.Keys) {
-    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-      (New-Object System.Security.Principal.SecurityIdentifier($sid)),
-      [System.Security.AccessControl.FileSystemRights]::FullControl,
-      'ContainerInherit,ObjectInherit', 'None', 'Allow')
-    $acl.AddAccessRule($rule)
-  }
-  Set-Acl -Path $Path -AclObject $acl
+  Set-Acl -LiteralPath $Path -AclObject $acl
 }
 
 # Copia + valida + aplica retencao em UM destino. Lanca em falha.
@@ -196,25 +272,18 @@ function Copy-ToDestination {
   }
   $destSize = (Get-Item $destBak).Length
 
-  $validCopies = @(
-    Get-ChildItem -Path $Dest -Filter '*.bak' -File |
-      Where-Object { Test-Path "$($_.FullName).sha256" } |
-      Sort-Object LastWriteTimeUtc -Descending
-  )
-  $removed = @()
-  if ($validCopies.Count -gt $RetainCount) {
-    foreach ($old in ($validCopies | Select-Object -Skip $RetainCount)) {
-      Remove-Item -Path $old.FullName, "$($old.FullName).sha256" -Force
-      $removed += $old.Name
-    }
-  }
+  # Retencao: so roda DEPOIS de a copia nova validada existir. Mantem os
+  # $RetainCount backups mais recentes (par .bak + .sha256) e apaga o resto,
+  # inclusive .sha256 orfaos. A copia recem-gravada nunca e removida.
+  $ret = Invoke-Retention -Directory $Dest -Keep $RetainCount -ProtectPath $destBak
 
   return [pscustomobject]@{
     Destination     = $Dest
     DestinationPath = $destBak
     SizeBytes       = $destSize
-    CopiesRetained  = [Math]::Min($validCopies.Count, $RetainCount)
-    CopiesRemoved   = $removed
+    CopiesRetained  = $ret.Retained
+    CopiesRemoved   = $ret.Removed
+    OrphansRemoved  = $ret.OrphansRemoved
   }
 }
 
@@ -268,7 +337,7 @@ try {
 
   $latest = Get-ChildItem -Path $BackupSource -Filter '*.bak' -File |
     Where-Object { Test-Path "$($_.FullName).sha256" } |
-    Sort-Object LastWriteTimeUtc -Descending |
+    Sort-Object -Property @{ Expression = { Get-BackupInstant $_ } } -Descending |
     Select-Object -First 1
   if (-not $latest) { throw "Nenhum backup .bak com .sha256 correspondente em $BackupSource" }
 
@@ -295,7 +364,9 @@ try {
       Write-Host "== Destino: $dest ==" -ForegroundColor Cyan
       $r = Copy-ToDestination -Dest $dest -SourceFile $latest -ExpectedHash $expected
       $ok += $r
-      Write-Host "   copia validada em $($r.DestinationPath) (retidas: $($r.CopiesRetained), removidas: $($r.CopiesRemoved.Count))" -ForegroundColor DarkGray
+      Write-Host ("   copia validada em {0} (mantidos: {1}, removidos: {2}, sha256 orfaos: {3})" -f `
+        $r.DestinationPath, @($r.CopiesRetained).Count, @($r.CopiesRemoved).Count, @($r.OrphansRemoved).Count) -ForegroundColor DarkGray
+      if (@($r.CopiesRemoved).Count) { Write-Host "     apagados: $(@($r.CopiesRemoved) -join ', ')" -ForegroundColor DarkGray }
       Write-ObservabilityRecord @{
         result           = 'success'
         backup_file      = $latest.Name
@@ -304,8 +375,9 @@ try {
         size_bytes       = $r.SizeBytes
         sha256           = $expected
         retain_count     = $RetainCount
-        copies_retained  = $r.CopiesRetained
-        copies_removed   = $r.CopiesRemoved
+        copies_retained  = @($r.CopiesRetained)
+        copies_removed   = @($r.CopiesRemoved)
+        orphans_removed  = @($r.OrphansRemoved)
       }
     }
     catch {
