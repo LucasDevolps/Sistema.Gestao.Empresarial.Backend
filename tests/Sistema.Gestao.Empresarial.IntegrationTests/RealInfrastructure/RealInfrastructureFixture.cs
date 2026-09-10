@@ -7,8 +7,10 @@ using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
+using Sistema.Gestao.Empresarial.Infrastructure.Organizations;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
+using Sistema.Gestao.Empresarial.IntegrationTests.TestData;
 using StackExchange.Redis;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.RealInfrastructure;
@@ -42,6 +44,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
     public Guid HiringUnitGuid { get; private set; }
     public Guid ActingUnitGuid { get; private set; }
     public Guid SectorGuid { get; private set; }
+    public Guid SectorCategoryGuid { get; private set; }
     public Guid ActorUserGuid { get; private set; }
 
     public async Task InitializeAsync()
@@ -96,6 +99,9 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
         new(dbContext, TimeProvider.System);
 
     public ProfessionalCatalogService CreateProfessionalCatalogService(AppDbContext dbContext) =>
+        new(dbContext, TimeProvider.System);
+
+    public OrganizationCatalogService CreateOrganizationCatalogService(AppDbContext dbContext) =>
         new(dbContext, TimeProvider.System);
 
     public CreateEmployeeRequest CreateEmployeeRequest(
@@ -163,7 +169,8 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
 
         var profession = new Profissao(Guid.NewGuid(), $"Profissão {IsolationKey}", null, now);
         var position = new Cargo(Guid.NewGuid(), $"Cargo {IsolationKey}", null, now);
-        var sector = new Setor(Guid.NewGuid(), actingUnit.Id, $"Farmácia {IsolationKey}", now);
+        var categoria = await SetorFactory.SeedCategoriaAsync(db, now, $"Categoria {IsolationKey}");
+        var sector = SetorFactory.Basico(actingUnit.Id, categoria.Id, $"Farmácia {IsolationKey}", now, sigla: "FARM");
         db.AddRange(profession, position, sector);
         await db.SaveChangesAsync();
 
@@ -172,6 +179,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
         HiringUnitGuid = hiringUnit.Guid;
         ActingUnitGuid = actingUnit.Guid;
         SectorGuid = sector.Guid;
+        SectorCategoryGuid = categoria.Guid;
 
         var actorEmployee = new Funcionario(
             Guid.NewGuid(), "Gestor de integração", $"gestor-{IsolationKey}@hospital.test", null,

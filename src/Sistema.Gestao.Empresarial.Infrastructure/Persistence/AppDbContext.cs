@@ -22,7 +22,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
 
     public DbSet<Organizacao> Organizacoes => Set<Organizacao>();
     public DbSet<UnidadeHospitalar> UnidadesHospitalares => Set<UnidadeHospitalar>();
+    public DbSet<CategoriaSetor> CategoriasSetores => Set<CategoriaSetor>();
     public DbSet<Setor> Setores => Set<Setor>();
+    public DbSet<SetorUnidadeAtendida> SetoresUnidadesAtendidas => Set<SetorUnidadeAtendida>();
     public DbSet<Profissao> Profissoes => Set<Profissao>();
     public DbSet<Cargo> Cargos => Set<Cargo>();
     public DbSet<NivelProfissional> NiveisProfissionais => Set<NivelProfissional>();
@@ -51,7 +53,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
 
         ConfigurarOrganizacao(modelBuilder.Entity<Organizacao>());
         ConfigurarUnidade(modelBuilder.Entity<UnidadeHospitalar>());
+        ConfigurarCategoriaSetor(modelBuilder.Entity<CategoriaSetor>());
         ConfigurarSetor(modelBuilder.Entity<Setor>());
+        ConfigurarSetorUnidadeAtendida(modelBuilder.Entity<SetorUnidadeAtendida>());
         ConfigurarProfissao(modelBuilder.Entity<Profissao>());
         ConfigurarCargo(modelBuilder.Entity<Cargo>());
         ConfigurarNivel(modelBuilder.Entity<NivelProfissional>());
@@ -149,13 +153,80 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         builder.HasOne(x => x.Organizacao).WithMany().HasForeignKey(x => x.OrganizacaoId);
     }
 
+    private static void ConfigurarCategoriaSetor(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<CategoriaSetor> builder)
+    {
+        builder.ToTable("CategoriasSetores");
+        ConfigurarBase(builder);
+        builder.Property(x => x.Nome)
+            .HasMaxLength(120)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.Property(x => x.Descricao).HasMaxLength(500);
+        builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
+
+        var seedDate = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        builder.HasData(
+            SeedCategoriaSetor(1, "F1B81208-6AF0-4AAD-8BE1-DEED557E5537", "Assistencial", seedDate),
+            SeedCategoriaSetor(2, "1CA290F5-B8F1-470D-8EB4-FA66972982CF", "Administrativo", seedDate),
+            SeedCategoriaSetor(3, "1D3EA693-D7AD-48DC-BF02-7AB702412D22", "Diagnóstico", seedDate),
+            SeedCategoriaSetor(4, "4F21ABB7-9AF4-438E-917A-FB6FB99E5A3F", "Cirúrgico", seedDate),
+            SeedCategoriaSetor(5, "16E087C3-A9CF-4F66-9446-81B7CC12FCB1", "Emergência", seedDate),
+            SeedCategoriaSetor(6, "F628F4E9-DEC6-4AA4-8486-E660B6F21A34", "Internação", seedDate),
+            SeedCategoriaSetor(7, "02BB6BBA-8BC6-41B1-97A7-A5065803CA9A", "Apoio Assistencial", seedDate),
+            SeedCategoriaSetor(8, "2A61A94F-6106-40EB-B6CD-84BE7F3633D9", "Farmacêutico", seedDate),
+            SeedCategoriaSetor(9, "2DB11A0D-A482-4292-A8C7-9D8C94448C75", "Logístico", seedDate),
+            SeedCategoriaSetor(10, "12F0BAC5-BB41-4C67-93D3-B1EDBD3551C2", "Outro", seedDate));
+    }
+
+    private static object SeedCategoriaSetor(long id, string guid, string nome, DateTimeOffset date) =>
+        new
+        {
+            Id = id,
+            Guid = Guid.Parse(guid),
+            Nome = nome,
+            Ativo = true,
+            Excluido = false,
+            DataCriacao = date,
+            DataAtualizacao = date
+        };
+
     private static void ConfigurarSetor(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Setor> builder)
     {
         builder.ToTable("Setores");
         ConfigurarBase(builder);
-        builder.Property(x => x.Nome).HasMaxLength(150).IsRequired();
+        builder.Property(x => x.Nome)
+            .HasMaxLength(150)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.Property(x => x.Sigla)
+            .HasMaxLength(20)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.Property(x => x.Descricao).HasMaxLength(1000);
+        builder.Property(x => x.LocalizacaoInterna).HasMaxLength(150);
+        builder.Property(x => x.Ramal).HasMaxLength(30);
+        builder.Property(x => x.Email).HasMaxLength(254);
         builder.HasIndex(x => new { x.UnidadeHospitalarId, x.Nome }).IsUnique().HasFilter("[Excluido] = 0");
+        builder.HasIndex(x => new { x.UnidadeHospitalarId, x.Sigla }).IsUnique().HasFilter("[Excluido] = 0");
         builder.HasOne(x => x.UnidadeHospitalar).WithMany().HasForeignKey(x => x.UnidadeHospitalarId);
+        builder.HasOne(x => x.CategoriaSetor).WithMany().HasForeignKey(x => x.CategoriaSetorId);
+        builder.HasOne<Funcionario>().WithMany().HasForeignKey(x => x.ResponsavelFuncionarioId).IsRequired(false);
+    }
+
+    private static void ConfigurarSetorUnidadeAtendida(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<SetorUnidadeAtendida> builder)
+    {
+        builder.ToTable("SetoresUnidadesAtendidas");
+        ConfigurarBase(builder);
+        builder.Property(x => x.DataInicio).HasColumnType("date");
+        builder.Property(x => x.DataFim).HasColumnType("date");
+        builder.HasIndex(x => new { x.SetorId, x.UnidadeHospitalarId })
+            .IsUnique()
+            .HasFilter("[Ativo] = 1 AND [Excluido] = 0");
+        builder.HasOne(x => x.Setor).WithMany().HasForeignKey(x => x.SetorId);
+        builder.HasOne(x => x.UnidadeHospitalar).WithMany().HasForeignKey(x => x.UnidadeHospitalarId);
+        builder.ToTable(t => t.HasCheckConstraint(
+            "CK_SetorUnidadeAtendida_Periodo",
+            "[DataFim] IS NULL OR [DataFim] >= [DataInicio]"));
     }
 
     private static void ConfigurarProfissao(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Profissao> builder)
@@ -337,7 +408,11 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             SeedPermissao(10, "B21B733D-30F3-4F28-8477-D5CE7517AE96", "CARGO_VISUALIZAR", "Visualizar cargos", seedDate),
             SeedPermissao(11, "80A43A7A-4615-49C5-BBA8-08488439C687", "CARGO_CRIAR", "Criar cargos", seedDate),
             SeedPermissao(12, "F45D589B-3234-4334-8CB7-15C4CA1AE245", "CARGO_EDITAR", "Editar cargos", seedDate),
-            SeedPermissao(13, "8F611DFC-3AF0-4FC0-9A97-EE76DE6E846D", "NIVEL_PROFISSIONAL_VISUALIZAR", "Visualizar níveis profissionais", seedDate));
+            SeedPermissao(13, "8F611DFC-3AF0-4FC0-9A97-EE76DE6E846D", "NIVEL_PROFISSIONAL_VISUALIZAR", "Visualizar níveis profissionais", seedDate),
+            SeedPermissao(14, "3713E2D5-9D19-4BAD-AEFB-C97E1AC03A2E", "SETOR_CRIAR", "Criar setores", seedDate),
+            SeedPermissao(15, "819C7EB3-278F-470E-A9B2-D9DBC3C9EE87", "CATEGORIA_SETOR_VISUALIZAR", "Visualizar categorias de setor", seedDate),
+            SeedPermissao(16, "72D43BB2-4DA1-4BA5-A32B-DEFCCCCC69D4", "CATEGORIA_SETOR_CRIAR", "Criar categorias de setor", seedDate),
+            SeedPermissao(17, "8E84D66F-A105-4748-86FF-E069A73F0065", "CATEGORIA_SETOR_EDITAR", "Editar categorias de setor", seedDate));
     }
 
     private static object SeedPermissao(long id, string guid, string codigo, string descricao, DateTimeOffset date) =>

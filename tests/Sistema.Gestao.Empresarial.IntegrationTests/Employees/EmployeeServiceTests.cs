@@ -6,6 +6,7 @@ using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
+using Sistema.Gestao.Empresarial.IntegrationTests.TestData;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.Employees;
 
@@ -214,7 +215,8 @@ internal sealed class EmployeeFixture : IAsyncDisposable
         Db.UnidadesHospitalares.AddRange(UnitA, UnitB, OtherOrganizationUnit);
         await Db.SaveChangesAsync();
 
-        SectorA = new Setor(Guid.NewGuid(), UnitA.Id, "Farmácia", now);
+        var categoriaSetor = await SetorFactory.SeedCategoriaAsync(Db, now);
+        SectorA = SetorFactory.Basico(UnitA.Id, categoriaSetor.Id, "Farmácia", now);
         Profession = new Profissao(Guid.NewGuid(), "Farmacêutico", null, now);
         Position = new Cargo(Guid.NewGuid(), "Farmacêutico Clínico", null, now);
         Level = new NivelProfissional(Guid.NewGuid(), "SR", "Sênior", 3, now);
