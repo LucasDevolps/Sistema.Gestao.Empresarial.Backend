@@ -9,6 +9,7 @@ using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
+using Sistema.Gestao.Empresarial.IntegrationTests.TestData;
 using StackExchange.Redis;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.RealInfrastructure;
@@ -163,7 +164,8 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
 
         var profession = new Profissao(Guid.NewGuid(), $"Profissão {IsolationKey}", null, now);
         var position = new Cargo(Guid.NewGuid(), $"Cargo {IsolationKey}", null, now);
-        var sector = new Setor(Guid.NewGuid(), actingUnit.Id, $"Farmácia {IsolationKey}", now);
+        var categoria = await SetorFactory.SeedCategoriaAsync(db, now, $"Categoria {IsolationKey}");
+        var sector = SetorFactory.Basico(actingUnit.Id, categoria.Id, $"Farmácia {IsolationKey}", now, sigla: "FARM");
         db.AddRange(profession, position, sector);
         await db.SaveChangesAsync();
 

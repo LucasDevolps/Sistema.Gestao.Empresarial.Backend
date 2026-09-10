@@ -17,4 +17,20 @@ internal static class Guard
 
         return normalized;
     }
+
+    public static string? TextoOpcional(string? value, string field, int maxLength)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        if (normalized.Length > maxLength)
+        {
+            throw new DomainException($"{field} deve possuir no máximo {maxLength} caracteres.");
+        }
+
+        return normalized;
+    }
 }
