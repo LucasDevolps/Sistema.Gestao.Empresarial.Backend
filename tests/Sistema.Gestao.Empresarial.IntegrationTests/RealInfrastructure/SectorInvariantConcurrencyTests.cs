@@ -153,6 +153,128 @@ public sealed class SectorInvariantConcurrencyTests(RealInfrastructureFixture fi
             outboxAddedAfter - outboxAddedBefore);
     }
 
+    [RealInfrastructureFact]
+    [Trait("Category", "RealInfrastructure")]
+    public async Task CriarSetor_E_InativarCategoria_Concorrentes_NuncaProduzemSetorAtivoComCategoriaInativa()
+    {
+        var category = await SeedDedicatedCategoryAsync();
+        var sectorName = $"Setor create-race {Guid.NewGuid():N}";
+
+        var criadoBefore = await CountOutboxAsync("SetorCriado");
+        var inativadaBefore = await CountOutboxAsync("CategoriaSetorInativada");
+
+        using var gate = new Barrier(2);
+        var create = Task.Run(() => RunAsync(gate, svc =>
+            svc.CreateSectorAsync(
+                BuildCreateRequest(category.Guid, sectorName, "CRR"),
+                Context(),
+                CancellationToken.None)));
+        var inactivate = Task.Run(() => RunAsync(gate, svc =>
+            svc.ChangeSectorCategoryStatusAsync(category.Guid, false, Context(), CancellationToken.None)));
+
+        var (createOutcome, inactivateOutcome) = (await create, await inactivate);
+
+        await using var verification = fixture.CreateDbContext();
+        var sector = await verification.Setores.AsNoTracking()
+            .Where(x => x.Nome == sectorName)
+            .Select(x => new { x.Ativo })
+            .SingleOrDefaultAsync();
+        var categoryActive = await verification.CategoriasSetores.AsNoTracking()
+            .Where(x => x.Guid == category.Guid).Select(x => x.Ativo).SingleAsync();
+
+        // Invariável central: nunca setor ativo com categoria inativa.
+        Assert.False(
+            sector is { Ativo: true } && !categoryActive,
+            "Estado inválido: setor ativo com categoria inativa.");
+
+        if (createOutcome == Outcome.Succeeded)
+        {
+            Assert.NotNull(sector);
+            Assert.True(sector!.Ativo);
+            Assert.True(categoryActive);
+            Assert.Equal(Outcome.DomainRejected, inactivateOutcome);
+        }
+        else
+        {
+            Assert.Equal(Outcome.DomainRejected, createOutcome);
+            Assert.Null(sector);
+            Assert.False(categoryActive);
+            Assert.Equal(Outcome.Succeeded, inactivateOutcome);
+        }
+
+        Assert.Equal(
+            createOutcome == Outcome.Succeeded ? 1 : 0,
+            await CountOutboxAsync("SetorCriado") - criadoBefore);
+        Assert.Equal(
+            inactivateOutcome == Outcome.Succeeded ? 1 : 0,
+            await CountOutboxAsync("CategoriaSetorInativada") - inativadaBefore);
+    }
+
+    [RealInfrastructureFact]
+    [Trait("Category", "RealInfrastructure")]
+    public async Task TrocarCategoriaDestino_E_InativarDestino_Concorrentes_NuncaDeixamSetorAtivoEmCategoriaInativa()
+    {
+        var categoryA = await SeedDedicatedCategoryAsync();
+        var categoryB = await SeedDedicatedCategoryAsync();
+        var sectorGuid = await SeedSectorAsync(categoryA.Guid, "Setor troca-categoria", "TRC");
+
+        SectorResponse baseline;
+        await using (var db = fixture.CreateDbContext())
+        {
+            baseline = (await fixture.CreateOrganizationCatalogService(db)
+                .GetSectorAsync(fixture.ActorUserGuid, sectorGuid, CancellationToken.None))!;
+        }
+
+        var atualizadoBefore = await CountOutboxAsync("SetorAtualizado");
+        var inativadaBefore = await CountOutboxAsync("CategoriaSetorInativada");
+
+        using var gate = new Barrier(2);
+        var move = Task.Run(() => RunAsync(gate, svc =>
+            svc.UpdateSectorAsync(
+                sectorGuid,
+                UpdateFrom(baseline) with { CategoryGuid = categoryB.Guid },
+                Context(),
+                CancellationToken.None)));
+        var inactivateB = Task.Run(() => RunAsync(gate, svc =>
+            svc.ChangeSectorCategoryStatusAsync(categoryB.Guid, false, Context(), CancellationToken.None)));
+
+        var (moveOutcome, inactivateOutcome) = (await move, await inactivateB);
+
+        await using var verification = fixture.CreateDbContext();
+        var state = await verification.Setores.AsNoTracking()
+            .Where(x => x.Guid == sectorGuid)
+            .Select(x => new { x.Ativo, CategoryGuid = x.CategoriaSetor.Guid })
+            .SingleAsync();
+        var bActive = await verification.CategoriasSetores.AsNoTracking()
+            .Where(x => x.Guid == categoryB.Guid).Select(x => x.Ativo).SingleAsync();
+
+        Assert.True(state.Ativo, "UpdateSectorAsync nunca inativa o setor.");
+        Assert.False(
+            state.CategoryGuid == categoryB.Guid && !bActive,
+            "Estado inválido: setor ativo em categoria destino inativa.");
+
+        if (moveOutcome == Outcome.Succeeded)
+        {
+            Assert.Equal(categoryB.Guid, state.CategoryGuid);
+            Assert.True(bActive);
+            Assert.Equal(Outcome.DomainRejected, inactivateOutcome);
+        }
+        else
+        {
+            Assert.Equal(Outcome.DomainRejected, moveOutcome);
+            Assert.Equal(categoryA.Guid, state.CategoryGuid);
+            Assert.False(bActive);
+            Assert.Equal(Outcome.Succeeded, inactivateOutcome);
+        }
+
+        Assert.Equal(
+            moveOutcome == Outcome.Succeeded ? 1 : 0,
+            await CountOutboxAsync("SetorAtualizado") - atualizadoBefore);
+        Assert.Equal(
+            inactivateOutcome == Outcome.Succeeded ? 1 : 0,
+            await CountOutboxAsync("CategoriaSetorInativada") - inativadaBefore);
+    }
+
     private async Task<Outcome> RunAsync(Barrier gate, Func<OrganizationCatalogService, Task> operation)
     {
         await using var db = fixture.CreateDbContext();
@@ -184,10 +306,19 @@ public sealed class SectorInvariantConcurrencyTests(RealInfrastructureFixture fi
         Guid categoryGuid, string name, string sigla, bool allowsSharedActing = false)
     {
         await using var db = fixture.CreateDbContext();
-        var request = new CreateSectorRequest(
+        var created = await fixture.CreateOrganizationCatalogService(db).CreateSectorAsync(
+            BuildCreateRequest(categoryGuid, $"{name} {fixture.IsolationKey}", sigla, allowsSharedActing),
+            Context(),
+            CancellationToken.None);
+        return created.Guid;
+    }
+
+    private CreateSectorRequest BuildCreateRequest(
+        Guid categoryGuid, string name, string sigla, bool allowsSharedActing = false) =>
+        new(
             fixture.HiringUnitGuid,
             categoryGuid,
-            $"{name} {fixture.IsolationKey}",
+            name,
             sigla,
             Description: null,
             InternalLocation: null,
@@ -198,10 +329,6 @@ public sealed class SectorInvariantConcurrencyTests(RealInfrastructureFixture fi
             AllowsScheduleAllocation: false,
             AllowsSharedActing: allowsSharedActing,
             ServedUnits: null);
-        var created = await fixture.CreateOrganizationCatalogService(db).CreateSectorAsync(
-            request, Context(), CancellationToken.None);
-        return created.Guid;
-    }
 
     private static UpdateSectorRequest UpdateFrom(SectorResponse s) =>
         new(

@@ -153,6 +153,13 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
         CancellationToken cancellationToken)
     {
         var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
+
+        // A criação de um setor ativo participa do mesmo protocolo de lock da
+        // categoria usado pela inativação de categoria. O id abaixo só compõe o
+        // recurso do lock; a categoria é relida e revalidada (ativa/não excluída)
+        // dentro da transação, já sob o lock, por ResolveCategoryIdAsync.
+        var categoryLockId = await ResolveCategoryLockIdAsync(request.CategoryGuid, cancellationToken);
+
         var sectorGuid = await ExecuteMutationAsync(async () =>
         {
             var unit = await ResolveUnitAsync(request.UnitGuid, organizationId, cancellationToken);
@@ -206,7 +213,11 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
             };
             AddAuditAndOutbox("SetorCriado", "Setor", "CRIADO", sector.Guid, context, null, data, now);
             return sector.Guid;
-        }, cancellationToken);
+        },
+        cancellationToken,
+        categoryLockId is { } lockCategoryId
+            ? ct => AcquireLocksAsync(ct, SectorCategoryLockResource(lockCategoryId))
+            : null);
 
         return await BuildSectorResponseAsync(sectorGuid, organizationId, cancellationToken)
             ?? throw new InvalidOperationException("O setor persistido não pôde ser recuperado.");
@@ -220,13 +231,18 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
     {
         var organizationId = await GetActorOrganizationIdAsync(context.ActorUserGuid, cancellationToken);
 
-        // Serializa com AddSectorServedUnitAsync no recurso lógico do setor: a
-        // verificação "existe unidade atendida ativa?" ao desabilitar a atuação
-        // compartilhada passa a enxergar qualquer inclusão concorrente commitada.
+        // Dois recursos, adquiridos SEMPRE na ordem determinística categoria -> setor
+        // (AcquireLocksAsync ordena e deduplica):
+        //   categoria destino: serializa com a inativação da categoria alvo, mantendo
+        //     "setor ativo => categoria ativa" mesmo quando o update repõe/troca a
+        //     categoria de um setor que permanece ativo.
+        //   setor: serializa com AddSectorServedUnitAsync ("desabilitar atuação
+        //     compartilhada" x "adicionar unidade atendida").
         var sectorLockId = await dbContext.Setores.AsNoTracking()
             .Where(x => x.Guid == sectorGuid && x.UnidadeHospitalar.OrganizacaoId == organizationId)
             .Select(x => (long?)x.Id)
             .SingleOrDefaultAsync(cancellationToken);
+        var categoryLockId = await ResolveCategoryLockIdAsync(request.CategoryGuid, cancellationToken);
 
         var found = await ExecuteMutationAsync(async () =>
         {
@@ -280,9 +296,10 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
             return true;
         },
         cancellationToken,
-        sectorLockId is { } lockSectorId
-            ? ct => AcquireLockAsync(SectorLockResource(lockSectorId), ct)
-            : null);
+        ct => AcquireLocksAsync(
+            ct,
+            categoryLockId is { } lockCategoryId ? SectorCategoryLockResource(lockCategoryId) : string.Empty,
+            sectorLockId is { } lockSectorId ? SectorLockResource(lockSectorId) : string.Empty));
 
         return found ? await BuildSectorResponseAsync(sectorGuid, organizationId, cancellationToken) : null;
     }
@@ -355,7 +372,7 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
         },
         cancellationToken,
         categoryLockId is { } lockCategoryId
-            ? ct => AcquireLockAsync(SectorCategoryLockResource(lockCategoryId), ct)
+            ? ct => AcquireLocksAsync(ct, SectorCategoryLockResource(lockCategoryId))
             : null);
 
         return found ? await BuildSectorResponseAsync(sectorGuid, organizationId, cancellationToken) : null;
@@ -436,7 +453,7 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
         },
         cancellationToken,
         sectorLockId is { } lockSectorId
-            ? ct => AcquireLockAsync(SectorLockResource(lockSectorId), ct)
+            ? ct => AcquireLocksAsync(ct, SectorLockResource(lockSectorId))
             : null);
 
         return relationshipGuid.HasValue
@@ -635,7 +652,7 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
         },
         cancellationToken,
         categoryLockId is { } lockCategoryId
-            ? ct => AcquireLockAsync(SectorCategoryLockResource(lockCategoryId), ct)
+            ? ct => AcquireLocksAsync(ct, SectorCategoryLockResource(lockCategoryId))
             : null);
 
         return found ? await GetSectorCategoryAsync(categoryGuid, cancellationToken) : null;
@@ -747,6 +764,18 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
             .Select(x => (long?)x.Id)
             .SingleOrDefaultAsync(cancellationToken)
         ?? throw new DomainException("A categoria de setor informada não existe ou está inativa.");
+
+    /// <summary>
+    /// Id interno da categoria apenas para compor o recurso do lock lógico
+    /// (independe de estar ativa — o objetivo é serializar contra uma inativação
+    /// concorrente). A validação de existência/ativa acontece dentro da transação,
+    /// sob o lock, em <see cref="ResolveCategoryIdAsync"/>.
+    /// </summary>
+    private Task<long?> ResolveCategoryLockIdAsync(Guid categoryGuid, CancellationToken cancellationToken) =>
+        dbContext.CategoriasSetores.AsNoTracking()
+            .Where(x => x.Guid == categoryGuid)
+            .Select(x => (long?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
 
     private async Task<long?> ResolveResponsibleIdAsync(
         Guid? responsibleEmployeeGuid,
@@ -1024,13 +1053,26 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
         transaction?.CommitAsync(cancellationToken) ?? Task.CompletedTask;
 
     // Locks lógicos por recurso — mesmo padrão de AuthenticationService /
-    // PermissionAdministrationService. Namespaces distintos e disjuntos:
-    //   sge:setor:categoria:{id}  serializa reativar setor  x  inativar categoria
-    //   sge:setor:{id}            serializa desabilitar atuação compartilhada x
-    //                             adicionar unidade atendida
-    // Nenhum fluxo adquire mais de um lock ao mesmo tempo; caso venha a adquirir,
-    // a ordem determinística é categoria antes de setor.
+    // PermissionAdministrationService. Dois namespaces:
+    //   sge:setor:categoria:{id}  (tier 0) protege a invariável "setor ativo =>
+    //                             categoria ativa" em create / update / reativação
+    //                             de setor e na inativação de categoria.
+    //   sge:setor:{id}            (tier 1) protege "AllowsSharedActing=false =>
+    //                             nenhuma unidade atendida ativa".
+    // Quando uma operação precisa dos dois (UpdateSectorAsync), a ORDEM ÚNICA E
+    // DETERMINÍSTICA é: categoria (tier 0) antes de setor (tier 1). AcquireLocksAsync
+    // ordena, deduplica e libera em ordem reversa — nenhum fluxo pode inverter.
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> InProcessLocks = new();
+
+    private static readonly IComparer<string> LockResourceOrder = Comparer<string>.Create(
+        static (left, right) =>
+        {
+            var tierComparison = LockResourceTier(left).CompareTo(LockResourceTier(right));
+            return tierComparison != 0 ? tierComparison : string.CompareOrdinal(left, right);
+        });
+
+    private static int LockResourceTier(string resource) =>
+        resource.StartsWith("sge:setor:categoria:", StringComparison.Ordinal) ? 0 : 1;
 
     private static string SectorCategoryLockResource(long categoriaSetorId) =>
         $"sge:setor:categoria:{categoriaSetorId.ToString(CultureInfo.InvariantCulture)}";
@@ -1038,15 +1080,62 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
     private static string SectorLockResource(long setorId) =>
         $"sge:setor:{setorId.ToString(CultureInfo.InvariantCulture)}";
 
-    private async Task<IAsyncDisposable> AcquireLockAsync(string resource, CancellationToken cancellationToken)
+    /// <summary>
+    /// Adquire um ou mais locks lógicos em ordem determinística (categoria antes de
+    /// setor), sem duplicar recursos iguais. Deve ser chamado dentro da transação da
+    /// unidade de trabalho.
+    /// </summary>
+    private async Task<IAsyncDisposable> AcquireLocksAsync(
+        CancellationToken cancellationToken,
+        params string[] resources)
     {
-        if (!dbContext.Database.IsSqlServer())
+        var ordered = resources
+            .Where(static resource => !string.IsNullOrEmpty(resource))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(static resource => resource, LockResourceOrder)
+            .ToArray();
+        if (ordered.Length == 0)
         {
-            var semaphore = InProcessLocks.GetOrAdd(resource, static _ => new SemaphoreSlim(1, 1));
-            await semaphore.WaitAsync(cancellationToken);
-            return new SemaphoreReleaser(semaphore);
+            return NoopAsyncDisposable.Instance;
         }
 
+        if (!dbContext.Database.IsSqlServer())
+        {
+            var acquired = new List<SemaphoreSlim>(ordered.Length);
+            try
+            {
+                foreach (var resource in ordered)
+                {
+                    var semaphore = InProcessLocks.GetOrAdd(resource, static _ => new SemaphoreSlim(1, 1));
+                    await semaphore.WaitAsync(cancellationToken);
+                    acquired.Add(semaphore);
+                }
+
+                return new SemaphoreCollectionReleaser(acquired);
+            }
+            catch
+            {
+                for (var index = acquired.Count - 1; index >= 0; index--)
+                {
+                    acquired[index].Release();
+                }
+
+                throw;
+            }
+        }
+
+        foreach (var resource in ordered)
+        {
+            await AcquireApplockAsync(resource, cancellationToken);
+        }
+
+        // applock com @LockOwner='Transaction' é liberado no commit/rollback da
+        // transação da própria unidade de trabalho — nada a liberar manualmente.
+        return NoopAsyncDisposable.Instance;
+    }
+
+    private async Task AcquireApplockAsync(string resource, CancellationToken cancellationToken)
+    {
         var connection = dbContext.Database.GetDbConnection();
         await using var command = connection.CreateCommand();
         command.Transaction = dbContext.Database.CurrentTransaction?.GetDbTransaction();
@@ -1073,10 +1162,6 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
             throw new TimeoutException(
                 "Não foi possível serializar a operação de setor no momento. Tente novamente.");
         }
-
-        // applock com @LockOwner='Transaction' é liberado no commit/rollback da
-        // transação da própria unidade de trabalho — nada a liberar manualmente.
-        return NoopAsyncDisposable.Instance;
     }
 
     private async Task<long> GetActorOrganizationIdAsync(
@@ -1119,11 +1204,15 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
     private sealed record UnitReference(long Id, Guid Guid, long OrganizationId);
     private sealed record ServedUnitReference(long Id, Guid Guid, DateOnly StartDate);
 
-    private sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IAsyncDisposable
+    private sealed class SemaphoreCollectionReleaser(IReadOnlyList<SemaphoreSlim> semaphores) : IAsyncDisposable
     {
         public ValueTask DisposeAsync()
         {
-            semaphore.Release();
+            for (var index = semaphores.Count - 1; index >= 0; index--)
+            {
+                semaphores[index].Release();
+            }
+
             return ValueTask.CompletedTask;
         }
     }

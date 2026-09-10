@@ -36,10 +36,14 @@ public sealed class SectorSchemaAndConcurrencyTests(RealInfrastructureFixture fi
     public async Task NomesConcorrentes_PersistemUmSetor_EClassificamFieldName()
     {
         var name = $"Setor nome concorrente {fixture.IsolationKey}";
+        // Categorias distintas para que os dois creates não sejam serializados pelo
+        // lock de categoria e a colisão ocorra no índice único (unidade, nome) —
+        // exercitando a tradução de SQL 2601/2627.
+        var (categoryA, categoryB) = (await SeedCategoryAsync(), await SeedCategoryAsync());
 
         var attempts = await Task.WhenAll(
-            TryCreateSectorAsync(name, "CNA"),
-            TryCreateSectorAsync(name, "CNB"));
+            TryCreateSectorAsync(name, "CNA", categoryA),
+            TryCreateSectorAsync(name, "CNB", categoryB));
 
         Assert.Single(attempts, x => x.Response is not null);
         var failure = Assert.Single(attempts, x => x.Error is not null).Error;
@@ -56,10 +60,11 @@ public sealed class SectorSchemaAndConcurrencyTests(RealInfrastructureFixture fi
     {
         var sigla = "CSG";
         var prefix = $"Setor sigla concorrente {fixture.IsolationKey}";
+        var (categoryA, categoryB) = (await SeedCategoryAsync(), await SeedCategoryAsync());
 
         var attempts = await Task.WhenAll(
-            TryCreateSectorAsync($"{prefix} A", sigla),
-            TryCreateSectorAsync($"{prefix} B", sigla));
+            TryCreateSectorAsync($"{prefix} A", sigla, categoryA),
+            TryCreateSectorAsync($"{prefix} B", sigla, categoryB));
 
         Assert.Single(attempts, x => x.Response is not null);
         var failure = Assert.Single(attempts, x => x.Error is not null).Error;
@@ -113,10 +118,11 @@ public sealed class SectorSchemaAndConcurrencyTests(RealInfrastructureFixture fi
 
     private Guid SharedSectorGuid { get; set; }
 
-    private CreateSectorRequest NewSectorRequest(string name, string sigla, bool allowsSharedActing = false) =>
+    private CreateSectorRequest NewSectorRequest(
+        string name, string sigla, bool allowsSharedActing = false, Guid? categoryGuid = null) =>
         new(
             fixture.HiringUnitGuid,
-            fixture.SectorCategoryGuid,
+            categoryGuid ?? fixture.SectorCategoryGuid,
             name,
             sigla,
             Description: null,
@@ -132,13 +138,23 @@ public sealed class SectorSchemaAndConcurrencyTests(RealInfrastructureFixture fi
     private SectorOperationContext Context() =>
         new(fixture.ActorUserGuid, Guid.NewGuid(), Guid.NewGuid().ToString("N"), "127.0.0.1");
 
-    private async Task<SectorAttempt> TryCreateSectorAsync(string name, string sigla)
+    private async Task<Guid> SeedCategoryAsync()
+    {
+        await using var db = fixture.CreateDbContext();
+        var created = await fixture.CreateOrganizationCatalogService(db).CreateSectorCategoryAsync(
+            new CreateSectorCategoryRequest($"Categoria índice {Guid.NewGuid():N}", null),
+            Context(),
+            CancellationToken.None);
+        return created.Guid;
+    }
+
+    private async Task<SectorAttempt> TryCreateSectorAsync(string name, string sigla, Guid? categoryGuid = null)
     {
         try
         {
             await using var db = fixture.CreateDbContext();
             var response = await fixture.CreateOrganizationCatalogService(db).CreateSectorAsync(
-                NewSectorRequest(name, sigla), Context(), CancellationToken.None);
+                NewSectorRequest(name, sigla, categoryGuid: categoryGuid), Context(), CancellationToken.None);
             return new SectorAttempt(response, null);
         }
         // Único desfecho de falha esperado nesta corrida: a segunda criação com o
