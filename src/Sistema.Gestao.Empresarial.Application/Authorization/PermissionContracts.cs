@@ -13,7 +13,11 @@ public static class PermissionCodes
     public const string EditPositions = "CARGO_EDITAR";
     public const string ViewProfessionalLevels = "NIVEL_PROFISSIONAL_VISUALIZAR";
     public const string ViewSectors = "SETOR_VISUALIZAR";
+    public const string CreateSectors = "SETOR_CRIAR";
     public const string EditSectors = "SETOR_EDITAR";
+    public const string ViewSectorCategories = "CATEGORIA_SETOR_VISUALIZAR";
+    public const string CreateSectorCategories = "CATEGORIA_SETOR_CRIAR";
+    public const string EditSectorCategories = "CATEGORIA_SETOR_EDITAR";
     public const string ManageUserPermissions = "USUARIO_GERENCIAR_PERMISSOES";
 
     public static IReadOnlyCollection<string> All { get; } =
@@ -29,7 +33,11 @@ public static class PermissionCodes
         EditPositions,
         ViewProfessionalLevels,
         ViewSectors,
+        CreateSectors,
         EditSectors,
+        ViewSectorCategories,
+        CreateSectorCategories,
+        EditSectorCategories,
         ManageUserPermissions
     ];
 }

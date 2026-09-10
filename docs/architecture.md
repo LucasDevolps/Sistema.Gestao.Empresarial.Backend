@@ -97,7 +97,9 @@ estão detalhados em [`backup-and-replication.md`](backup-and-replication.md).
 ## 4. Modelo organizacional e multi-hospital
 
 ```text
-Organizacao 1 --- N UnidadeHospitalar 1 --- N Setor
+Organizacao 1 --- N UnidadeHospitalar 1 --- N Setor N --- 1 CategoriaSetor
+                           |                    |
+                           |                    +--- N SetorUnidadeAtendida N --- 1 UnidadeHospitalar
                            |
                            +--- N FuncionarioUnidadeAtuacao N --- 1 Funcionario
                            |                                      |
@@ -110,9 +112,16 @@ Funcionario 1 --- N FuncionarioSetor N --- 1 Setor
 atuação é representado separadamente por `FuncionarioUnidadeAtuacao`, com período e
 status. A associação `FuncionarioSetor` liga o funcionário aos setores em que atua.
 
-Organização, unidade, setor e vínculos são entidades configuráveis, não enums. Os
-casos de uso restringem vínculos à organização da unidade de contratação. Leituras
-de identidade e catálogos derivam o tenant pela cadeia
+O `Setor` pertence a uma unidade principal imutável, é classificado por
+`CategoriaSetor` (catálogo global configurável, como `Profissao`/`Cargo`) e, quando
+permite atuação compartilhada, atende unidades adicionais por
+`SetorUnidadeAtendida` — vínculo temporal com período e status, encerrado nunca
+removido. Nome e sigla são únicos por unidade principal (índices filtrados a
+registros não excluídos, collation `Latin1_General_CI_AS`).
+
+Organização, unidade, setor, categoria e vínculos são entidades configuráveis, não
+enums. Os casos de uso restringem vínculos à organização da unidade de contratação.
+Leituras de identidade e catálogos derivam o tenant pela cadeia
 `Usuario → Funcionario → UnidadeContratacao → Organizacao` e filtram outra
 organização antes da projeção.
 

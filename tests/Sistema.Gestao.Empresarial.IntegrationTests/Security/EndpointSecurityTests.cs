@@ -119,7 +119,23 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
         AssertPolicy(
             endpoints,
             "api/setores",
+            HttpMethods.Get,
             RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewSectors);
+        AssertPolicy(
+            endpoints,
+            "api/setores",
+            HttpMethods.Post,
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.CreateSectors);
+        AssertPolicy(
+            endpoints,
+            "api/categorias-setor",
+            HttpMethods.Get,
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewSectorCategories);
+        AssertPolicy(
+            endpoints,
+            "api/categorias-setor",
+            HttpMethods.Post,
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.CreateSectorCategories);
     }
 
     [Fact]
@@ -143,6 +159,21 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
         string policy)
     {
         var endpoint = endpoints.Single(x => x.RoutePattern.RawText == route);
+        Assert.Contains(
+            endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
+            authorization => authorization.Policy == policy);
+    }
+
+    private static void AssertPolicy(
+        IEnumerable<RouteEndpoint> endpoints,
+        string route,
+        string httpMethod,
+        string policy)
+    {
+        var endpoint = endpoints.Single(x =>
+            x.RoutePattern.RawText == route
+            && x.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods
+                .Contains(httpMethod, StringComparer.OrdinalIgnoreCase));
         Assert.Contains(
             endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>(),
             authorization => authorization.Policy == policy);
