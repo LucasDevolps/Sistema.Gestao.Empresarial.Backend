@@ -141,7 +141,10 @@ public sealed class SectorSchemaAndConcurrencyTests(RealInfrastructureFixture fi
                 NewSectorRequest(name, sigla), Context(), CancellationToken.None);
             return new SectorAttempt(response, null);
         }
-        catch (Exception exception)
+        // Único desfecho de falha esperado nesta corrida: a segunda criação com o
+        // mesmo nome/sigla na mesma unidade. Qualquer outra exceção sobe e reprova
+        // o teste.
+        catch (DuplicateBusinessKeyException exception)
         {
             return new SectorAttempt(null, exception);
         }
@@ -159,7 +162,10 @@ public sealed class SectorSchemaAndConcurrencyTests(RealInfrastructureFixture fi
                 CancellationToken.None);
             return new ServedUnitAttempt(true, null);
         }
-        catch (Exception exception)
+        // Único desfecho de falha esperado: perder a corrida contra a desabilitação
+        // da atuação compartilhada ou contra outro vínculo idêntico. Qualquer outra
+        // exceção sobe e reprova o teste.
+        catch (DomainException exception)
         {
             return new ServedUnitAttempt(false, exception);
         }
