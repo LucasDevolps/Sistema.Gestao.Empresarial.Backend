@@ -1,80 +1,98 @@
-# Arquitetura da fundação
+# Arquitetura do sistema
 
-## 1. Diagnóstico do repositório
+> **Documento _as built_.** Validado em 10 de setembro de 2026 contra o código,
+> migrations, testes, arquivos Compose e workflows existentes no repositório. As
+> seções abaixo descrevem o estado implementado; intenções futuras aparecem somente
+> na seção [Limites atuais e evolução](#16-limites-atuais-e-evolução).
 
-Em 31 de agosto de 2026 o diretório de trabalho está vazio: não existe solution,
-projeto, código, configuração, teste, histórico Git ou instrução local `AGENTS.md`.
-Não há legado a migrar nem decisões anteriores a preservar. Consequentemente,
-todos os requisitos funcionais e não funcionais ainda estão ausentes.
+## 1. Visão geral
 
-A fundação adotará .NET 10 (`net10.0`), versão LTS ativa, ASP.NET Core, EF Core e
-SQL Server. Dependências externas serão encapsuladas em Infrastructure e
-configuradas por environment.
+O backend é uma aplicação hospitalar multi-organização construída em .NET 10,
+ASP.NET Core, Entity Framework Core e SQL Server. A solução também usa Redis para
+estado operacional de sessão e cache de permissões, RabbitMQ/MassTransit para
+mensageria e OpenTelemetry para observabilidade.
 
-## 2. Limites e dependências da solution
-
-```text
-Api --------------------> Application ----> Domain
- |                              ^              ^
- +------------------------> Infrastructure ----+
-
-Worker -----------------> Application ----> Domain
- |                              ^
- +------------------------> Infrastructure
-
-UnitTests ----------------------------> Domain/Application
-IntegrationTests ---------------------> Api/Worker/Infrastructure
-```
-
-Projetos:
-
-- `Domain`: entidades, value objects, eventos de domínio, exceções e regras puras;
-- `Application`: casos de uso, DTOs, validação, portas e políticas;
-- `Infrastructure`: EF Core/SQL Server, Redis, MassTransit/RabbitMQ, segurança,
-  auditoria, outbox, inbox e implementações das portas;
-- `Api`: composição HTTP, autenticação/autorização, middleware e OpenAPI;
-- `Worker`: publisher da outbox, consumers, checkpoints e rotinas agendadas;
-- `UnitTests`: regras determinísticas sem infraestrutura;
-- `IntegrationTests`: pipeline HTTP, SQL, Redis e mensageria com dependências reais
-  descartáveis quando a respectiva suíte for habilitada.
-
-Controllers serão adaptadores finos. Nenhuma camada interna referencia Api ou
-Worker. Domain não referencia EF Core, Redis, RabbitMQ ou ASP.NET Core.
-
-## 3. Arquitetura de execução e containers
+A implementação segue uma separação inspirada em Clean Architecture:
 
 ```text
-                    cliente HTTPS
-                             |
-                  Nginx / rate limiting
-                             |
-                 +-----------+-----------+
-                 |                       |
-              API #1                 API #N
-                 +-----------+-----------+
-                             |
-                  +----------+----------+
-                  |          |          |
-              SQL Server   Redis     RabbitMQ
-                                         |
-                             +-----------+-----------+
-                             |                       |
-                          Worker #1               Worker #N
+Domain <----- Application <----- Api
+   ^              ^               |
+   |              |               v
+   +---------- Infrastructure <----+
+                  ^
+                  |
+             Worker / Bootstrap
 
-              API + Worker --OTLP--> OTel Collector
+AppHost --orquestra em desenvolvimento--> Api, Worker e dependências
+
+UnitTests --------> Domain / Application
+IntegrationTests -> Api / Infrastructure (e dependências transitivas)
 ```
 
-API e Worker serão imagens multi-stage, executadas como usuário não root, sem
-`container_name`, sem estado necessário em memória local e com graceful shutdown.
-O Compose local possui Nginx com TLS na borda, SQL Server, Redis persistente (AOF),
-RabbitMQ sem publicar management, Collector OTLP e Aspire Dashboard standalone
-no override de desenvolvimento, named volumes, health checks e dependências
-condicionadas à saúde. API/Worker enviam ao Collector, que encaminha os três sinais
-ao Dashboard com API key. A UI usa browser token e publica só em `127.0.0.1:18888`;
-Nginx local publica só em `127.0.0.1:8080/8443`. Produção não carrega esse override.
-Liveness mede o processo; readiness mede SQL, Redis e RabbitMQ conforme a função do
-serviço. Migrations serão uma etapa controlada, nunca executadas concorrentemente
-por todas as réplicas em produção.
+As referências de projeto preservam `Domain` sem dependências das camadas externas
+e `Application` dependente apenas de `Domain`. `Infrastructure` implementa os
+contratos da aplicação. `Api`, `Worker` e `Bootstrap` são composition roots e
+referenciam `Application` e `Infrastructure`.
+
+## 2. Projetos da solution
+
+- `Sistema.Gestao.Empresarial.Domain`: entidades, invariantes e exceções de domínio;
+- `Sistema.Gestao.Empresarial.Application`: contratos de casos de uso, DTOs,
+  validação e envelopes de integração;
+- `Sistema.Gestao.Empresarial.Infrastructure`: EF Core/SQL Server, autenticação,
+  Redis, autorização, auditoria, Outbox, Inbox, MassTransit e implementações dos
+  casos de uso;
+- `Sistema.Gestao.Empresarial.Api`: controllers, pipeline HTTP, JWT, autorização,
+  rate limiting, Swagger e health checks;
+- `Sistema.Gestao.Empresarial.Worker`: publicação da Outbox, consumo da Inbox,
+  retenção de auditoria e endpoints de health;
+- `Sistema.Gestao.Empresarial.Bootstrap`: executável one-shot para provisionar o
+  primeiro administrador;
+- `Sistema.Gestao.Empresarial.AppHost`: orquestração local com .NET Aspire;
+- `Sistema.Gestao.Empresarial.UnitTests`: testes rápidos de `Domain` e `Application`;
+- `Sistema.Gestao.Empresarial.IntegrationTests`: testes da API, infraestrutura,
+  arquitetura e uma categoria opt-in `RealInfrastructure`.
+
+Controllers funcionam como adaptadores HTTP finos: validam o contrato de entrada,
+delegam aos serviços e convertem o resultado em resposta HTTP. Regras e acesso a
+dados não ficam nos controllers.
+
+## 3. Execução e containers
+
+O deployment Compose principal tem a seguinte topologia:
+
+```text
+                         cliente HTTPS
+                                |
+                    Nginx / TLS / limites
+                                |
+                              API
+                    +-----------+-----------+
+                    |           |           |
+               SQL Server     Redis      RabbitMQ
+                                            |
+                                          Worker
+
+                 API + Worker --OTLP--> OTel Collector
+                                             |
+                                      Aspire Dashboard
+                                      (somente override dev)
+```
+
+Nginx é a borda pública da API. Há redes distintas para borda, proxy da API e
+serviços internos. SQL Server, Redis e RabbitMQ usam volumes persistentes e health
+checks; o serviço `sqlserver-init` cria o login de aplicação com privilégio
+reduzido. API e Worker possuem Dockerfiles multi-stage, executam com o usuário
+não-root `app` e recebem configuração por variáveis de ambiente.
+
+O `docker-compose.override.yml` de desenvolvimento publica Nginx somente em
+loopback e adiciona Aspire Dashboard e Collector. O arquivo de produção não inclui
+o override de desenvolvimento. Migrations são aplicadas como uma etapa explícita,
+fora das réplicas da API e do Worker.
+
+O repositório também contém uma topologia opcional de réplica síncrona do SQL
+Server e automações de backup/verificação. Esses procedimentos e suas limitações
+estão detalhados em [`backup-and-replication.md`](backup-and-replication.md).
 
 ## 4. Modelo organizacional e multi-hospital
 
@@ -88,338 +106,221 @@ Organizacao 1 --- N UnidadeHospitalar 1 --- N Setor
 Funcionario 1 --- N FuncionarioSetor N --- 1 Setor
 ```
 
-`UnidadeContratacaoId` registra origem contratual, não delimita autorização nem
-participação. `FuncionarioUnidadeAtuacao` contém início, fim e status e preserva o
-histórico. A mesma separação entre origem, escopo de atuação e autorização será
-aplicada a pacientes, atendimentos, prescrições, escalas e módulos futuros.
-Consultas sempre recebem um escopo organizacional autorizado; pertencer à mesma
-organização torna o relacionamento possível, mas não concede acesso por si só.
+`UnidadeContratacaoId` registra a origem contratual do funcionário. O escopo de
+atuação é representado separadamente por `FuncionarioUnidadeAtuacao`, com período e
+status. A associação `FuncionarioSetor` liga o funcionário aos setores em que atua.
 
-Organização, unidade, setor e vínculos são entidades configuráveis e não enums.
-Uma constraint garante que setor e unidade pertençam à organização coerente; casos
-de uso validam que vínculos de atuação não atravessem organizações indevidamente.
+Organização, unidade, setor e vínculos são entidades configuráveis, não enums. Os
+casos de uso restringem vínculos à organização da unidade de contratação. Leituras
+de identidade e catálogos derivam o tenant pela cadeia
+`Usuario → Funcionario → UnidadeContratacao → Organizacao` e filtram outra
+organização antes da projeção.
 
 ## 5. Profissão, cargo, nível e funcionário
 
-- `Profissao`: identidade própria, nome, descrição e ciclo de vida;
-- `Cargo`: identidade própria, profissão compatível opcional e ciclo de vida;
-- `NivelProfissional`: catálogo estruturado (`JR`, `PL`, `SR`), extensível e sem
-  inferência pelo nome do cargo;
+- `Profissao`: catálogo com nome, descrição e ciclo de vida;
+- `Cargo`: catálogo com profissão compatível opcional e ciclo de vida;
+- `NivelProfissional`: catálogo ordenado por campo estrutural `Ordem`;
 - `Funcionario`: matrícula, dados pessoais/profissionais, profissão, cargo, nível e
   unidade de contratação;
-- `FuncionarioUnidadeAtuacao` e `FuncionarioSetor`: vínculos temporais e lógicos.
+- `FuncionarioUnidadeAtuacao` e `FuncionarioSetor`: vínculos operacionais.
 
-`Id` (`long`) é chave interna; `Guid` é a identidade pública; `Matricula` é gerada
-no servidor, imutável e única. A matrícula usará uma `SEQUENCE` do SQL Server (ou
-gerador transacional equivalente), nunca contagem de linhas. GUIDs terão índices
-únicos. FKs internas continuarão usando `Id`.
+Entidades usam `long` como chave interna e `Guid` como identidade pública. A
+matrícula é gerada no SQL Server por `SEQUENCE`. Os endpoints não expõem IDs
+internos. A API implementa criação, consulta paginada, detalhe, edição profissional,
+inativação/reativação e gestão dos vínculos do funcionário, além de leitura e
+manutenção dos catálogos profissionais.
 
-## 6. Ciclo de vida sem DELETE
+Chaves de negócio textuais relevantes usam collation _case-insensitive_ no banco e
+possuem constraints/índices para manter unicidade também sob concorrência.
 
-Entidades persistentes implementam metadados de exclusão lógica (`Ativo`,
-`Excluido`, `ExcluidoEm`, `ExcluidoPor`). O DbContext aplica filtros globais a todo
-tipo soft-deletable. Vínculos são encerrados/inativados, nunca removidos.
+## 6. Persistência, exclusão lógica e retenção
 
-O contexto rejeita estados EF `Deleted`, transformando-os em erro, e o contrato de
-repositório não oferece `Delete`. Testes arquiteturais procurarão `DELETE`,
-`ExecuteDelete`, `Remove` e `RemoveRange` em código de produção. Constraints e
-índices filtrados consideram registros não excluídos. `IgnoreQueryFilters()` fica
-restrito a serviços explícitos de auditoria/administração.
+Entidades de negócio persistentes derivam dos tipos-base auditáveis e, quando
+aplicável, possuem `Ativo`, `Excluido`, `ExcluidoEm` e `ExcluidoPor`. O `AppDbContext`
+aplica filtros globais a entidades soft-deletable. Operações de negócio inativam ou
+encerram registros e vínculos, em vez de removê-los fisicamente.
 
-## 7. Autenticação, JWT e refresh token
+O contexto rejeita entradas EF no estado `Deleted`, protegendo o caminho normal de
+persistência contra exclusão física acidental. Há, porém, uma exceção operacional
+deliberada: `AuditRetentionWorker` usa `ExecuteDeleteAsync` diretamente para expurgar
+em lotes `ApiRequestLogs` e `AuditLogs` vencidos. Por padrão, logs HTTP são mantidos
+por 180 dias e auditorias de negócio por 1.825 dias; habilitação, prazos, lote,
+frequência e limite por varredura são configuráveis em `AuditRetention`.
 
-`Usuario` e `Funcionario` são agregados distintos com relação opcional 0..1. Senha
-é armazenada somente como hash produzido por `PasswordHasher` configurável. Login
-tem proteção contra enumeração, limitação de tentativas e auditoria sem segredo.
+`OutboxMessages`, `InboxMessages` e `MessageAuditLogs` não participam hoje desse
+expurgo. Qualquer política futura para essas tabelas precisa preservar os requisitos
+de rastreabilidade e idempotência.
 
-O access token JWT é curto, assinado com chave rotacionável e contém, no mínimo,
-`sub` (UserGuid), `sid` (SessionId), `jti` e `session_version`. O refresh token é
-opaco, aleatório, rotacionado a cada uso e somente seu hash é persistido. Reuso de
-refresh token revoga a sessão. Refresh nunca revive sessão ausente, revogada,
-substituída ou inativa há 30 minutos.
+## 7. Autenticação, JWT e sessão única
 
-JWT é credencial; a sessão operacional é autoridade. O SQL é a representação
-durável/auditável; Redis é a autoridade operacional rápida enquanto saudável.
+`Usuario` e `Funcionario` são agregados distintos, com relação opcional. Senhas são
+armazenadas como hash. O login protege contra enumeração de usuários, aplica bloqueio
+temporário configurável após falhas e não registra credenciais em claro.
 
-## 8. Sessão única e concorrência de login
+O access token JWT contém `sub`, `sid`, `jti` e `session_version`, tem validade curta
+(10 minutos por padrão) e usa chave simétrica fornecida por configuração. O refresh
+token é opaco; somente seu hash é persistido e ele é rotacionado a cada uso. Reuso
+de token substituído revoga a sessão.
 
-SQL possui índice único filtrado sobre `UsuarioId` para sessão ativa, não revogada e
-não excluída. Logins do mesmo usuário são serializados em transação por lock lógico
-no SQL Server (`sp_getapplock`, encapsulado em Infrastructure), depois:
+O SQL Server é a fonte durável e auditável da sessão; Redis mantém o estado
+operacional de baixa latência. O login é serializado por usuário com
+`sp_getapplock`, revoga sessões anteriores, incrementa a versão da sessão, persiste
+sessão/auditoria/Outbox na transação e atualiza o estado operacional. Um índice
+filtrado reforça a unicidade da sessão ativa.
 
-1. credenciais são validadas;
-2. versões/sessões anteriores são revogadas idempotentemente;
-3. a versão de sessão do usuário é incrementada;
-4. a nova sessão, auditoria e eventos de outbox são persistidos na mesma transação;
-5. o ponteiro ativo no Redis é trocado atomicamente e a sessão anterior é
-   invalidada;
-6. somente após sucesso durável são emitidos access e refresh tokens ao cliente.
+Logout é idempotente. A validação de cada JWT compara usuário, sessão, `jti`, versão,
+status e atividade. O limite de inatividade é de 30 minutos; existe ainda uma vida
+absoluta configurável (sete dias por padrão).
 
-O protocolo Redis usa compare-and-set/Lua para `active-session`, sessão e TTL em um
-round trip. Em falhas entre SQL e Redis, a estratégia é fail-closed: não se aceita a
-sessão antiga; um reconciliador e o cache miss reidratam a partir do SQL. Constraints
-continuam sendo a última barreira contra duas sessões ativas.
+## 8. Redis e fallback de sessão
 
-Logout revoga todas as sessões ainda ativas do usuário, mesmo havendo a constraint,
-e só produz auditoria/evento na primeira transição. Repetições retornam sucesso sem
-novas escritas ou eventos.
+Chaves Redis são centralizadas em `IRedisKeyFactory` e usam prefixo de instância e
+ambiente. O armazenamento operacional mantém sessão ativa, ponteiro do usuário,
+snapshot de permissões e atividade pendente de checkpoint.
 
-## 9. Redis, sliding expiration e fallback
+Scripts Lua realizam validação e atualização atômicas do estado de sessão e das
+permissões. Em cache miss, a sessão pode ser reidratada a partir do SQL. Se Redis
+estiver indisponível, o fallback para SQL é controlado por
+`Session:EnableSqlFallback`; falhas que não podem ser validadas com segurança são
+negadas. Quando o script indica que o intervalo configurado foi atingido, a própria
+validação da sessão consolida no SQL a atividade registrada no Redis.
 
-Chaves são produzidas exclusivamente por `IRedisKeyFactory`:
-
-```text
-sge:{environment}:session:{sessionId}
-sge:{environment}:user:{userGuid}:active-session
-sge:{environment}:permissions:{userGuid}
-sge:{environment}:session-activity:dirty
-```
-
-O script de validação compara usuário, `sid`, `jti`, versão, status e ponteiro ativo;
-se válido, atualiza `LastActivityAt` e renova TTL para 30 minutos atomicamente. Não
-armazena tokens ou segredos em claro. Um checkpoint do Worker consolida atividade
-no SQL em intervalo configurável, somente quando a diferença é relevante.
-
-Em cache miss, o SQL é consultado e o Redis reidratado apenas se a sessão durável
-ainda for válida. Em indisponibilidade real do Redis, uma política configurável faz
-fallback temporário ao SQL com timeout/circuit breaker, métricas e log; falhas
-ambíguas são negadas. O fallback privilegia segurança e pode elevar carga, por isso
-é observável e limitado.
-
-## 10. Autorização configurável e fail-closed
+## 9. Autorização configurável e fail-closed
 
 O modelo contém `Perfil`, `Permissao`, `PerfilPermissao`, `UsuarioPerfil` e
-`UsuarioPermissao` (concessão ou negação direta, com precedência explícita). A
-autorização usa policies dinâmicas e `RequirePermissionAttribute`, nunca comparação
-de role em controllers. O cache Redis mantém um snapshot versionado por usuário,
-com TTL curto e atualização compare-and-set. Mudanças incrementam a versão SQL e
-instalam no Redis uma barreira `ready=false` antes do commit. Assim, uma requisição
-concorrente nunca aceita o snapshot antigo; uma barreira à frente do SQL falha
-fechado, enquanto cache ausente ou indisponível pode consultar o SQL.
+`UsuarioPermissao`. Permissões diretas podem conceder ou negar acesso, e a negação
+direta tem precedência na resolução efetiva.
 
-Uma fallback policy exige usuário autenticado em todo endpoint. Endpoints de negócio
-também devem ter permissão explícita; somente ações conscientemente públicas recebem
-`AllowAnonymous`. Um teste enumera `EndpointDataSource` e falha quando cada endpoint
-não possui exatamente uma justificativa: permissão/policy ou exposição pública. A
-concessão de permissões verifica a capacidade administrativa do ator e impede
-autoelevação ou concessão além do escopo delegável.
+A API usa policies dinâmicas e `RequirePermissionAttribute`. A fallback policy exige
+autenticação, enquanto endpoints públicos precisam declarar `AllowAnonymous`. O
+cache Redis de permissões é versionado; alterações instalam uma barreira de
+invalidação para impedir que uma requisição aceite um snapshot antigo.
 
-## 11. Auditoria HTTP e de entidades
+Os endpoints administrativos permitem gerir permissões com auditoria e Outbox,
+lock lógico e prevenção de autoelevação. Testes arquiteturais enumeram endpoints
+para verificar que cada um possui permissão/policy ou exposição pública explícita.
 
-O middleware cria/preserva `CorrelationId`, usa `Activity.Current.TraceId` para o
-trace e captura request/response com limites de tamanho e content-types permitidos.
-Um redator recursivo mascara headers, query e JSON sensíveis (`password`, tokens,
-cookies, authorization, API keys e secrets) antes da persistência.
+## 10. API HTTP e segurança de borda
 
-`ApiRequestLog` registra metadados, corpos redigidos, status e duração.
-`AuditLog` registra entidade/Guid, ação, antes/depois, ator, origem, correlation e
-trace. Mudança de domínio + AuditLog + Outbox compartilham a transação SQL. Logs não
-são apagados e políticas futuras de arquivamento preservam a proibição de DELETE na
-aplicação.
+A API expõe controllers para:
 
-## 12. Contratos, RabbitMQ e outbox
+- autenticação (`login`, `refresh` e `logout`);
+- identidade atual e administração de usuários/permissões;
+- funcionários e seus vínculos de unidade/setor;
+- profissões, cargos e níveis profissionais;
+- organizações, unidades hospitalares e setores.
 
-Eventos são DTOs versionados, nunca entidades EF. O envelope contém `eventId`,
-`messageId`, tipo/versão, correlation, trace/W3C context, ocorrido em UTC, produtor
-e dados. Exchanges e filas são duráveis; mensagens relevantes são persistentes;
-quorum queues serão habilitáveis para filas críticas.
+`ProblemDetails` e um exception handler centralizam erros. Swagger possui esquema
+Bearer, é habilitado por configuração e fica desligado na configuração padrão.
+Kestrel aplica limite de body de 1 MiB, timeouts e taxa mínima. O rate limiter tem
+uma política global por usuário/IP e uma política mais restrita para autenticação.
 
-`OutboxMessage` guarda envelope/payload, produtor, ator, estado, tentativas, próxima
-tentativa e timestamps. O Worker disputa lotes via locking otimista/claim atômico,
-publica pelo MassTransit e marca como publicada; nunca apaga. Réplicas podem operar
-concomitantemente sem dupla alteração de estado. Confirmações e idempotência do
-destino tornam publicação ao menos uma vez segura.
+Quando `ReverseProxy:Enabled=true`, somente proxies explicitamente conhecidos são
+aceitos, com `ForwardLimit=1`. Nginx termina TLS, substitui forwarded headers, aplica
+limites de conexão/taxa/body e adiciona headers de segurança. A própria API também
+adiciona headers de segurança e HSTS fora de Development.
 
-## 13. Inbox, classificação de falhas e DLQ
+## 11. Auditoria
 
-Cada consumer abre transação, tenta inserir chave única `(MessageId, Consumer)` e:
+O middleware HTTP cria ou normaliza `X-Correlation-ID`, preserva `TraceId`, limita a
+captura de request/response e mascara headers, query string, JSON e form data
+sensíveis. `ApiRequestLog` é persistido por um canal limitado e por um escopo de
+`DbContext` separado do processamento da requisição; falha de auditoria não troca a
+resposta HTTP já produzida.
 
-- duplicada já processada: registra contador, confirma (ACK) e não repete efeito;
-- válida: executa efeito, atualiza Inbox e MessageAuditLog e confirma;
-- regra de negócio ou validação conhecida: marca
-  `REJEITADA_REGRA_NEGOCIO`/`REJEITADA_VALIDACAO`, audita, `LogWarning` e ACK;
-- falha técnica transitória: rollback e retry com backoff/jitter;
-- falha técnica permanente/desconhecida após política: registra erro e encaminha à
-  DLQ, preservando payload e histórico.
+`AuditLog` registra mudanças de negócio com ator, origem, correlação, trace e estado
+antes/depois. Nos casos de uso transacionais, mudança de domínio, auditoria e Outbox
+são gravadas na mesma transação. A política de retenção física é a exceção descrita
+na seção 6.
 
-`InboxMessage`, `OutboxMessage` e `MessageAuditLog` nunca são apagadas. Um
-classificador explícito substitui um `catch (Exception) { throw; }` genérico como
-única política. Retry e DLQ são responsabilidade técnica, não mecanismo de regra de
-negócio.
+## 12. RabbitMQ, Outbox e Inbox
 
-## 14. Observabilidade
+Eventos de integração usam DTOs em envelope versionado, não entidades EF. O envelope
+carrega identificadores de evento/mensagem, tipo, versão, correlação, contexto de
+trace, instante UTC, produtor, ator e payload.
 
-API, Worker, ASP.NET Core, HttpClient, EF/SqlClient, Redis, MassTransit e operações
-próprias (auth, outbox, consumers, checkpoint) emitem traces, métricas e logs
-estruturados. Contexto W3C é propagado pelas mensagens. `CorrelationId` funcional e
-`TraceId` técnico permanecem distintos e armazenados juntos.
+O Worker disputa lotes da Outbox no SQL Server usando claim atômico com lease,
+`UPDLOCK`, `READPAST` e `ROWLOCK`. Publicações inválidas são classificadas como erro
+permanente; falhas transitórias recebem backoff. A entrega é _at least once_ e
+preserva o mesmo `MessageId` entre tentativas.
 
-OTLP envia dados ao Collector; nenhuma camada de negócio referencia Datadog. O
-Collector poderá exportar futuramente para Datadog, Prometheus/Tempo, Elastic ou
-Azure Monitor somente por configuração. Resource attributes incluem service name,
-version, environment e instance id; sampling é configurável.
+O consumer MassTransit usa endpoint durável e Inbox com chave única por
+`(MessageId, Consumer)`. Duplicatas já processadas recebem ACK sem repetir o efeito.
+Violações conhecidas de domínio/validação são auditadas como rejeição e recebem ACK.
+Somente `TransientTechnicalException` entra no retry exponencial; falhas permanentes,
+desconhecidas ou esgotadas são persistidas como DLQ e seguem para a fila `_error`.
 
-Métricas incluem HTTP/status/duração, auth/sessões, Redis hit/miss/latência/fallback,
-mensageria/retry/DLQ, outbox pendente/idade e inbox duplicada/falhas. IDs de usuário,
-sessão, mensagem e correlação aparecem apenas em logs/traces seguros, nunca como
-labels de alta cardinalidade.
+## 13. Observabilidade e health checks
 
-## 15. Persistência inicial
+API e Worker exportam logs, traces e métricas via OTLP. A instrumentação inclui
+ASP.NET Core, HttpClient, SqlClient, runtime e medidores próprios de autenticação,
+permissões, Outbox e Inbox. Resources incluem nome, versão, ambiente e instância do
+serviço. A razão de sampling é configurável.
 
-Grupos de tabelas:
+Não há dependência de fornecedor dentro das regras de negócio. O Collector é o
+ponto de configuração dos exporters. No ambiente Compose de desenvolvimento ele
+encaminha sinais ao Aspire Dashboard.
 
-- organização: `Organizacoes`, `UnidadesHospitalares`, `Setores`;
-- pessoas: `Profissoes`, `Cargos`, `NiveisProfissionais`, `Funcionarios`,
-  `FuncionariosUnidadesAtuacao`, `FuncionariosSetores`;
-- segurança: `Usuarios`, `UsuariosSessoes`, `Perfis`, `Permissoes`, tabelas de
-  associação e histórico de credenciais/refresh quando necessário;
-- integração: `OutboxMessages`, `InboxMessages`, `MessageAuditLogs`;
-- auditoria: `AuditLogs`, `ApiRequestLogs`.
+Nos dois executáveis:
 
-Todos os horários são `DateTimeOffset` UTC. Índices cobrem Guid, matrícula, chaves
-naturais por organização, sessões ativas, outbox pendente e inbox idempotente.
-Concorrência otimista usa `rowversion`; invariantes críticas também têm constraints.
+- `/health/live` é público e verifica apenas o processo;
+- `/health/ready` é público para orquestração e verifica dependências registradas;
+- na API, `/health` executa todas as verificações e exige autenticação.
 
-## 16. Health, configuração e segurança operacional
+A readiness da API verifica SQL Server e Redis. A do Worker verifica SQL Server,
+Redis e também o bus RabbitMQ registrado pelo MassTransit.
 
-`/health/live` é público e só indica vida do processo. `/health/ready` valida as
-dependências necessárias; `/health` será protegido ou restrito no ambiente. Swagger
-tem Bearer, contratos e responses, é habilitado por opção e não fica público em
-produção por padrão. ProblemDetails centraliza falhas sem stack trace em produção.
+## 14. Bootstrap administrativo
 
-Options tipadas (`Jwt`, `Session`, `Redis`, `Cache`, `RabbitMq`, `Outbox`, `Inbox`,
-`Audit`, `OpenTelemetry`) são validadas no startup. Segredos vêm de environment ou
-secret store. SQL usa pooling, timeout e retry transitório configurável.
+`Sistema.Gestao.Empresarial.Bootstrap` é um comando one-shot, não um endpoint da
+API. Ele lê a senha de um arquivo, valida configuração explícita e recusa execução
+se qualquer usuário, inclusive soft-deleted, já existir.
 
-## 17. Escalabilidade e futuro Kubernetes
+No SQL Server, uma transação serializável e `sp_getapplock` impedem bootstraps
+concorrentes. Organização, unidade, catálogos mínimos, funcionário, usuário, perfil,
+permissões, auditoria e Outbox são persistidos atomicamente. O script
+`bootstrap-initial-admin-docker.sh` integra esse fluxo ao ambiente Compose.
 
-Nenhuma regra depende de afinidade de sessão, singleton em memória ou ordem global
-de mensagens. SQL/constraints, Redis atômico e Inbox resolvem concorrência entre
-APIs e Workers. API e Worker escalam independentemente. Imagens, configuração,
-readiness/liveness, shutdown e OTLP já respeitam os contratos esperados por
-Deployments, Services, Secrets, ConfigMaps, Jobs de migration e autoscaling futuros;
-manifests Kubernetes não fazem parte desta primeira fatia.
+## 15. Testes e entrega contínua
 
-## 18. Ordem incremental de implementação
+O workflow principal executa restore em modo locked, verificação de formatação,
+build Release, testes rápidos com cobertura, auditoria de dependências, geração de
+script idempotente de migration, validação do Compose e build das imagens.
 
-1. solution, dependências direcionais, entidades-base, options, observabilidade,
-   health checks e Compose reproduzível;
-2. modelo organizacional/profissional e migrations iniciais;
-3. usuário, credenciais, sessão SQL, Redis e autenticação completa;
-4. autorização por permissão, cache/invalidação e testes fail-closed;
-5. auditoria HTTP/entidades e redação de dados sensíveis;
-6. contratos, outbox publisher, RabbitMQ e rastreamento distribuído;
-7. inbox/consumers, classificação de falhas, retry e DLQ;
-8. casos de uso de funcionário e vínculos multi-hospital;
-9. testes concorrentes e de integração completos, hardening e pipeline CI/CD;
-10. documentação operacional, migration job e preparação de manifests Kubernetes.
+O mesmo workflow sobe SQL Server, Redis e RabbitMQ com credenciais efêmeras e roda a
+categoria `RealInfrastructure`. Essa suíte cobre concorrência e constraints no SQL,
+autoridade de sessão no Redis, Inbox/Outbox, retry/DLQ e integração transportada pelo
+RabbitMQ. Ao final, o CI aplica migrations, sobe API/Worker/Nginx e executa um smoke
+test HTTPS. Imagens e filesystem também são verificados pelo Trivy, e há workflow
+separado de CodeQL.
 
-Cada incremento deverá compilar, testar suas invariantes e manter a API negada por
-padrão. A primeira implementação abaixo limita-se à fundação do item 1 e ao início
-do item 2; autenticação e mensageria não serão simuladas parcialmente de forma
-insegura.
+## 16. Limites atuais e evolução
 
-## 19. Estado após a décima segunda fatia
+- Kubernetes ainda não possui manifests neste repositório; Compose é a definição
+  executável de deployment atual e Aspire é exclusivo para desenvolvimento local.
+- O sistema usa assinatura JWT simétrica. Rotação sem indisponibilidade exige
+  evolução para múltiplas chaves identificadas (por exemplo, `kid`) ou provedor de
+  identidade externo.
+- O modelo e os casos de uso implementados cobrem identidade, autorização,
+  organização, catálogos e funcionários. Pacientes, atendimentos, prescrições e
+  escalas ainda são módulos futuros.
+- Retenção automatizada existe para `ApiRequestLogs` e `AuditLogs`, mas não para
+  tabelas de Inbox, Outbox e auditoria de mensagens.
+- A réplica SQL e os backups são recursos operacionais opcionais; não substituem um
+  plano externo de recuperação de desastre nem estão ativos sem configuração.
 
-Foram implementados o modelo de usuário/perfil/permissão, sessão durável, índice
-único filtrado de sessão ativa, lock transacional de login no SQL Server, JWT,
-refresh token rotativo, hashes de tokens, login/logout idempotente, validação Redis
-com Lua e sliding expiration, cache miss com reidratação SQL, fallback controlado,
-checkpoint de atividade, AuditLog e Outbox dos eventos de autenticação. A terceira
-fatia adiciona resolução efetiva de permissões por perfil e concessão/negação direta,
-catálogo inicial configurável, cache Redis versionado com barreira de invalidação,
-métricas, autorização dinâmica ligada ao banco, administração idempotente com lock,
-prevenção de autoelevação, AuditLog/Outbox da alteração e endpoints administrativos.
-A quarta fatia adiciona `ApiRequestLog`, captura limitada de request/response sem
-bufferizar respostas completas, mascaramento recursivo de JSON, form data, query e
-headers, associação com usuário/correlação/trace e persistência isolada para não
-reutilizar um `DbContext` possivelmente invalidado pela requisição. Falhas ao gravar
-a auditoria são registradas de forma estruturada sem substituir a resposta já
-produzida.
+## 17. Orquestração local com .NET Aspire
 
-A quinta fatia consolida o CI em um único workflow fail-fast: restore bloqueado,
-formatação, build Release, testes/TRX, auditoria de dependências, script idempotente
-de migrations, validação do Compose e build das imagens. A sexta fatia implementa o
-publisher da Outbox no Worker com claim atômico SQL (`UPDLOCK`, `READPAST`,
-`ROWLOCK`), lease recuperável, backoff exponencial, erro permanente para envelope
-inválido, métricas/traces e publicação MassTransit. O contrato é at-least-once: uma
-tentativa repetida preserva o mesmo `MessageId`, e a Inbox implementada na sétima
-fatia é a barreira idempotente contra efeitos duplicados.
+O `Sistema.Gestao.Empresarial.AppHost` modela somente o ambiente de desenvolvimento.
+Ele inicia SQL Server, Redis e RabbitMQ em containers, executa inicialização do login
+SQL e migrations como jobs one-shot e então inicia API e Worker como projetos .NET.
+Health checks autenticados e dependências de startup ficam visíveis no Dashboard.
 
-A sétima fatia adiciona `InboxMessages` e `MessageAuditLogs`, chave única por
-mensagem/consumer, lock pessimista de linha durante o efeito transacional, consumer
-MassTransit durável e métricas próprias. Violações de domínio e validação conhecida
-são persistidas como rejeição e recebem ACK. Somente `TransientTechnicalException`
-entra no retry exponencial; falhas permanentes, desconhecidas ou com tentativas
-esgotadas são persistidas como `DLQ` e encaminhadas à fila `_error` do endpoint. O
-histórico permanece no SQL mesmo se RabbitMQ ou suas filas forem perdidos.
+Não existe projeto `ServiceDefaults`: observabilidade e health checks são
+registrados pela própria aplicação. O AppHost fornece o endpoint OTLP temporário do
+Dashboard à configuração existente em Development, sem adicionar captura de
+headers, corpos, query strings, tokens ou PII.
 
-A oitava fatia implementa os casos de uso de funcionários: criação, consulta
-paginada, detalhe, edição profissional, inativação/reativação e gestão explícita de
-unidades de atuação e setores. A unidade de contratação permanece origem imutável,
-enquanto as atuações podem abranger hospitais da mesma organização. Vínculos são
-encerrados com data e status, nunca excluídos; períodos sobrepostos e duplicidades
-ativas são barrados no caso de uso e por índices únicos filtrados. Toda mutação
-relevante grava `AuditLog` e evento versionado na Outbox dentro da mesma transação.
-
-A nona fatia separa testes rápidos dos testes `RealInfrastructure`. O CI sobe SQL
-Server, Redis e RabbitMQ com credenciais efêmeras e executa migrations em banco
-isolado. A suíte valida matrícula concorrente por `SEQUENCE`, unicidade de e-mail e
-vínculo ativo sob corrida, rollback atômico de domínio/auditoria/outbox, sessão única
-com lock SQL e autoridade Redis, deduplicação da Inbox transportada pelo RabbitMQ,
-rejeição de negócio com ACK e persistência do ciclo retry/DLQ. O banco temporário e
-os volumes do CI são descartados somente pela infraestrutura de teste.
-
-A décima fatia disponibiliza os catálogos profissionais exigidos pelo cadastro de
-funcionários. Profissões e cargos possuem consulta paginada, criação, atualização e
-ativação/inativação por `Guid`; níveis profissionais possuem consulta ordenada pelo
-campo estrutural `Ordem`. As mutações são idempotentes, protegidas por permissões
-configuráveis e persistem auditoria e Outbox na mesma transação. A inativação é
-rejeitada enquanto houver funcionário ativo usando o registro, preservando a
-consistência operacional sem apagar o histórico.
-
-A décima primeira fatia adiciona defesa HTTP em profundidade. Nginx é a única porta
-pública da API, termina TLS, sobrescreve forwarded headers, limita conexões, taxa e
-body e adiciona headers de segurança. Uma rede interna dedicada liga somente Nginx
-e API; o endereço estático do proxy é a única origem autorizada pelo
-`ForwardedHeadersMiddleware`, com `ForwardLimit = 1`. Depois dessa validação,
-`RemoteIpAddress` contém o IP do cliente usado por auditoria, autenticação e rate
-limiting. Kestrel também aplica limite de 1 MiB, timeouts e taxa mínima, enquanto uma
-política ASP.NET global e outra mais restritiva protegem login e refresh. HSTS é
-aplicado no proxy e pela API fora de desenvolvimento.
-
-A décima segunda fatia fecha o ciclo de instalação com um bootstrap administrativo
-one-shot executado fora da API. O comando exige configuração explícita, catálogo
-completo criado pelas migrations e senha forte lida de arquivo; ele recusa execução quando qualquer
-usuário, até mesmo soft-deleted, já existe. No SQL Server, uma transação serializável
-e `sp_getapplock` impedem dois provisionamentos concorrentes. Organização, unidade,
-catálogos mínimos, funcionário, usuário, perfil integral, auditoria e Outbox são
-persistidos atomicamente; senha e hash nunca entram nos eventos ou logs de domínio.
-
-A décima terceira fatia completa os contratos de leitura necessários ao frontend:
-identidade e permissões efetivas do usuário atual, listagem administrativa de
-usuários e catálogos de organização atual, unidades hospitalares e setores. Todas
-as consultas usam somente `Guid` público, paginação limitada e escopo derivado de
-`Usuário → Funcionário → Unidade de contratação → Organização`. Dados de outro
-tenant são filtrados antes da projeção e os Controllers permanecem fail-closed por
-sessão/política e permissão explícita. Nenhum token, hash ou ID interno é exposto.
-
-## Orquestração local com .NET Aspire
-
-O projeto `Sistema.Gestao.Empresarial.AppHost` modela exclusivamente o ambiente de
-desenvolvimento local. Ele inicia SQL Server, Redis e RabbitMQ em containers,
-executa a inicialização do login SQL de menor privilégio e as migrations como jobs
-one-shot e, depois, executa API e Worker como projetos .NET. Dependências de
-startup e health checks autenticados ficam visíveis no Aspire Dashboard.
-
-Não foi criado `ServiceDefaults`: observabilidade e health checks já são definidos
-pela aplicação, e uma segunda camada duplicaria providers e instrumentações. O
-AppHost fornece ao `OpenTelemetry:OtlpEndpoint` existente o endpoint temporário do
-Dashboard apenas em Development. Não há captura adicional de headers, corpos,
-query strings, tokens ou PII.
-
-O modelo Aspire não é artefato de produção. Compose, Nginx, Collector, redes
-internas, imagens fixadas por digest e controles de hardening continuam sendo a
-fonte de verdade do deployment. Dashboard e endpoints dos recursos não são
-publicados pelo Nginx; no desenvolvimento Aspire, listeners alocados no host são
-restritos ao loopback.
+Aspire não é artefato de produção. Compose, Nginx, Collector, redes, imagens fixadas
+por digest e controles de hardening continuam sendo a fonte de verdade operacional.
