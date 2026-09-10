@@ -295,6 +295,16 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
                 return true;
             }
 
+            if (active && !await dbContext.CategoriasSetores.AnyAsync(
+                    x => x.Id == sector.CategoriaSetorId && x.Ativo, cancellationToken))
+            {
+                // Reativar um setor cuja categoria foi inativada recriaria a combinação
+                // proibida (setor ativo + categoria inativa) que as demais validações já
+                // impedem na criação/atualização e na inativação da categoria.
+                throw new DomainException(
+                    "A categoria associada ao setor está inativa e impede sua reativação.");
+            }
+
             var before = Snapshot(sector);
             var now = timeProvider.GetUtcNow();
             if (active)
@@ -858,17 +868,85 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
         catch (DbUpdateException exception) when (
             exception.InnerException is SqlException { Number: 2601 or 2627 } sqlException)
         {
-            // Sob concorrência, a única colisão possível por entrada do usuário é o
-            // par (unidade, nome) ou (unidade, sigla) de Setores e o nome de
-            // CategoriasSetores — os demais índices únicos são sobre GUIDs gerados
-            // pelo servidor. Traduz para o mesmo tipo/código da pré-checagem, sem
-            // inspecionar texto localizado do SQL Server nem expor nome de índice.
-            throw new DuplicateBusinessKeyException(
-                "Já existe um registro com esta chave de negócio.",
-                field: "name",
-                innerException: exception,
-                sqlErrorNumber: sqlException.Number);
+            // O banco é a última barreira de integridade: sob concorrência duas
+            // requisições podem passar a pré-checagem e colidir no índice único. A
+            // tradução identifica qual chave de negócio colidiu para devolver o
+            // `field` correto — nome, sigla ou (vínculo ativo de unidade atendida)
+            // a mesma regra de domínio da pré-checagem. Nada do texto localizado do
+            // SQL Server é propagado ao cliente.
+            throw TranslateUniqueViolation(sqlException, exception);
         }
+    }
+
+    /// <summary>
+    /// Índices únicos deste serviço cuja violação (SQL Server 2601/2627) corresponde
+    /// a uma chave de negócio pública. O nome do índice é um identificador estável do
+    /// schema (não varia com o idioma do servidor) e é usado apenas aqui — nunca
+    /// exposto ao cliente.
+    /// </summary>
+    private static readonly (string IndexName, string Field, string Message)[] SectorUniqueBusinessKeys =
+    [
+        ("IX_Setores_UnidadeHospitalarId_Nome", "name",
+            "Já existe um setor com este nome nesta unidade hospitalar."),
+        ("IX_Setores_UnidadeHospitalarId_Sigla", "sigla",
+            "Já existe um setor com esta sigla nesta unidade hospitalar."),
+        ("IX_CategoriasSetores_Nome", "name",
+            "Já existe uma categoria de setor com este nome."),
+    ];
+
+    private const string ServedUnitActiveUniqueIndex =
+        "IX_SetoresUnidadesAtendidas_SetorId_UnidadeHospitalarId";
+
+    private static Exception TranslateUniqueViolation(SqlException sqlException, DbUpdateException source)
+    {
+        var violatedIndex = FindViolatedIndex(sqlException);
+
+        if (violatedIndex == ServedUnitActiveUniqueIndex)
+        {
+            // Vínculo ativo duplicado: mesma regra e mesmo status (422) da
+            // pré-checagem, sem inventar um `field` de contrato inexistente.
+            return new DomainException("O setor já atende esta unidade hospitalar.");
+        }
+
+        foreach (var (indexName, field, message) in SectorUniqueBusinessKeys)
+        {
+            if (violatedIndex == indexName)
+            {
+                return new DuplicateBusinessKeyException(
+                    message, field, source, sqlException.Number);
+            }
+        }
+
+        // Sem classificação segura: conflito genérico de chave de negócio, sem
+        // `field` — nunca "name" por padrão.
+        return new DuplicateBusinessKeyException(
+            "Já existe um registro com esta chave de negócio.",
+            field: null,
+            innerException: source,
+            sqlErrorNumber: sqlException.Number);
+    }
+
+    private static string? FindViolatedIndex(SqlException sqlException)
+    {
+        // Só reconhecemos nomes da allowlist como substring do texto do erro
+        // 2601/2627 — sem regex e sem interpretar a prosa localizada do banco.
+        foreach (SqlError error in sqlException.Errors)
+        {
+            foreach (var (indexName, _, _) in SectorUniqueBusinessKeys)
+            {
+                if (error.Message.Contains(indexName, StringComparison.Ordinal))
+                {
+                    return indexName;
+                }
+            }
+
+            if (error.Message.Contains(ServedUnitActiveUniqueIndex, StringComparison.Ordinal))
+            {
+                return ServedUnitActiveUniqueIndex;
+            }
+        }
+
+        return null;
     }
 
     private async Task<IDbContextTransaction?> BeginTransactionAsync(CancellationToken cancellationToken) =>

@@ -184,13 +184,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             Id = id,
             Guid = Guid.Parse(guid),
             Nome = nome,
-            Descricao = (string?)null,
             Ativo = true,
             Excluido = false,
             DataCriacao = date,
-            DataAtualizacao = date,
-            ExcluidoEm = (DateTimeOffset?)null,
-            ExcluidoPor = (Guid?)null
+            DataAtualizacao = date
         };
 
     private static void ConfigurarSetor(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Setor> builder)

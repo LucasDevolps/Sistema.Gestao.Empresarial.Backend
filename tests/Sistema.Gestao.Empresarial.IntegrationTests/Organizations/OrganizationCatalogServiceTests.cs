@@ -256,6 +256,57 @@ public sealed class OrganizationCatalogServiceTests
     }
 
     [Fact]
+    public async Task ReativarSetor_ComCategoriaInativa_DeveRecusarSemEfeitos()
+    {
+        await using var fixture = await OrganizationCatalogFixture.CreateAsync();
+        var category = await fixture.Service.CreateSectorCategoryAsync(
+            new CreateSectorCategoryRequest("Emergência", null), fixture.Context(), CancellationToken.None);
+        var sector = await fixture.Service.CreateSectorAsync(
+            fixture.NewSectorRequest("Pronto-Socorro Central", "PSC") with { CategoryGuid = category.Guid },
+            fixture.Context(),
+            CancellationToken.None);
+        await fixture.Service.ChangeSectorStatusAsync(
+            sector.Guid, false, fixture.Context(), CancellationToken.None);
+        await fixture.Service.ChangeSectorCategoryStatusAsync(
+            category.Guid, false, fixture.Context(), CancellationToken.None);
+
+        var error = await Assert.ThrowsAsync<DomainException>(() =>
+            fixture.Service.ChangeSectorStatusAsync(
+                sector.Guid, true, fixture.Context(), CancellationToken.None));
+
+        Assert.Equal(
+            "A categoria associada ao setor está inativa e impede sua reativação.", error.Message);
+        var detail = await fixture.Service.GetSectorAsync(
+            fixture.Actor.Guid, sector.Guid, CancellationToken.None);
+        Assert.False(detail!.Active);
+        Assert.Empty(await fixture.Db.OutboxMessages
+            .Where(x => x.EventType == "SetorReativado").ToListAsync());
+        Assert.Empty(await fixture.Db.AuditLogs
+            .Where(x => x.Entidade == "Setor" && x.Acao == "REATIVADO").ToListAsync());
+    }
+
+    [Fact]
+    public async Task ReativarSetor_ComCategoriaAtiva_DeveFuncionarNormalmente()
+    {
+        await using var fixture = await OrganizationCatalogFixture.CreateAsync();
+        var category = await fixture.Service.CreateSectorCategoryAsync(
+            new CreateSectorCategoryRequest("Cirúrgico", null), fixture.Context(), CancellationToken.None);
+        var sector = await fixture.Service.CreateSectorAsync(
+            fixture.NewSectorRequest("Bloco Cirúrgico 2", "BC2") with { CategoryGuid = category.Guid },
+            fixture.Context(),
+            CancellationToken.None);
+        await fixture.Service.ChangeSectorStatusAsync(
+            sector.Guid, false, fixture.Context(), CancellationToken.None);
+
+        var reactivated = await fixture.Service.ChangeSectorStatusAsync(
+            sector.Guid, true, fixture.Context(), CancellationToken.None);
+
+        Assert.True(reactivated!.Active);
+        Assert.Single(await fixture.Db.OutboxMessages
+            .Where(x => x.EventType == "SetorReativado").ToListAsync());
+    }
+
+    [Fact]
     public async Task AdicionarEEncerrarUnidadeAtendida_DevePreservarHistorico()
     {
         await using var fixture = await OrganizationCatalogFixture.CreateAsync();

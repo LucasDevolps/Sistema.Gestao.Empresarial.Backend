@@ -353,11 +353,23 @@ WHERE [Sigla] IS NULL;
                 principalTable: "Funcionarios",
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
+
+            // Provisionamento de upgrade: em um banco já existente, o perfil
+            // ADMINISTRADOR_INICIAL foi criado antes destas permissões e o bootstrap
+            // não roda de novo. Este passo idempotente associa as novas permissões a
+            // esse perfil (no-op quando o perfil não existe — instalação nova).
+            migrationBuilder.Sql(
+                AdministratorProfilePermissionBackfill.GrantSectorPermissionsToInitialAdministratorSql);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            // Remove as associações concedidas no Up antes que a FK Restrict de
+            // PerfisPermissoes → Permissoes bloqueie a exclusão das permissões abaixo.
+            migrationBuilder.Sql(
+                AdministratorProfilePermissionBackfill.RevokeSectorPermissionsFromInitialAdministratorSql);
+
             migrationBuilder.DropForeignKey(
                 name: "FK_Setores_CategoriasSetores_CategoriaSetorId",
                 schema: "sge",
