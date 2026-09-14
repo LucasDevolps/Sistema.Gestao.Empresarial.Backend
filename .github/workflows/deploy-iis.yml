@@ -26,6 +26,19 @@ jobs:
         shell: pwsh
         run: ./scripts/dev-up.ps1 -SkipFrontend
 
+      - name: Provide local .env secrets
+        shell: pwsh
+        run: |
+          # .env fica fora do Git (contem segredos); dev-up.ps1 opera no clone fixo
+          # do usuario e ja o enxerga, mas o checkout isolado do runner nao tem esse
+          # arquivo. Copiamos do clone local conhecido desta maquina, sem nunca
+          # expor o conteudo em logs, repo ou workflow.
+          $source = 'C:\Users\lucas\source\repos\Sistema.Gestao.Empresarial.Backend\.env'
+          if (-not (Test-Path $source)) {
+            throw "Arquivo de segredos nao encontrado em $source."
+          }
+          Copy-Item -Path $source -Destination '.env' -Force
+
       - name: Publish to IIS
         shell: powershell -ExecutionPolicy Bypass -Command ". '{0}'"
         run: .\scripts\publish-local-iis.ps1 -Action Publish
