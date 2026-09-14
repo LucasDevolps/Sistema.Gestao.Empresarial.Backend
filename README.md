@@ -639,3 +639,4 @@ Aspire foi adicionada ao Nginx.
 O Docker Compose existente permanece a referência para a topologia containerizada
 e para produção, incluindo Nginx, redes internas, limites e hardening. O AppHost
 não é usado no deployment e não substitui nenhum arquivo Compose.
+
