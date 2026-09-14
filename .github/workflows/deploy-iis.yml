@@ -26,29 +26,6 @@ jobs:
         shell: pwsh
         run: ./scripts/dev-up.ps1 -SkipFrontend
 
-      - name: Wait for dependency ports to stabilize
-        shell: pwsh
-        run: |
-          $ports = 11433, 16379, 15673, 14317, 14318
-          Start-Sleep -Seconds 80
-          foreach ($port in $ports) {
-            $ready = $false
-            for ($i = 0; $i -lt 20; $i++) {
-              try {
-                $client = [System.Net.Sockets.TcpClient]::new()
-                $client.Connect('127.0.0.1', $port)
-                $client.Close()
-                $ready = $true
-                break
-              } catch {
-                Start-Sleep -Seconds 3
-              }
-            }
-            if (-not $ready) {
-              throw "Porta 127.0.0.1:$port nao respondeu a tempo."
-            }
-          }
-
       - name: Publish to IIS
         shell: powershell
         run: .\scripts\publish-local-iis.ps1 -Action Publish
