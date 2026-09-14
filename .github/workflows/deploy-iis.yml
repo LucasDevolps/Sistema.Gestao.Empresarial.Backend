@@ -27,5 +27,5 @@ jobs:
         run: ./scripts/dev-up.ps1 -SkipFrontend
 
       - name: Publish to IIS
-        shell: powershell
+        shell: powershell -ExecutionPolicy Bypass -Command ". '{0}'"
         run: .\scripts\publish-local-iis.ps1 -Action Publish
