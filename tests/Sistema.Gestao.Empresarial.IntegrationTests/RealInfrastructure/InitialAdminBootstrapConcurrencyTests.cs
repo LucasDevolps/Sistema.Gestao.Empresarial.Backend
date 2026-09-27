@@ -48,6 +48,12 @@ public sealed class InitialAdminBootstrapConcurrencyTests(RealInfrastructureFixt
             Assert.Equal(1, await verificationContext.Organizacoes.IgnoreQueryFilters().CountAsync());
             Assert.Equal(1, await verificationContext.AuditLogs.CountAsync());
             Assert.Equal(1, await verificationContext.OutboxMessages.CountAsync());
+            // Instalação nova: nenhum nível de exemplo (JR/PL/SR) fica ativo; o único
+            // nível visível é o criado pelo bootstrap para o administrador.
+            var levels = await verificationContext.NiveisProfissionais.ToListAsync();
+            var level = Assert.Single(levels);
+            Assert.Equal("SR", level.Codigo);
+            Assert.Equal("Sênior", level.Nome);
         }
         finally
         {
@@ -79,6 +85,7 @@ public sealed class InitialAdminBootstrapConcurrencyTests(RealInfrastructureFixt
                 "Administração Hospitalar",
                 "Administrador do Sistema",
                 "SR",
+                "Sênior",
                 "Administrador Inicial",
                 email,
                 null,

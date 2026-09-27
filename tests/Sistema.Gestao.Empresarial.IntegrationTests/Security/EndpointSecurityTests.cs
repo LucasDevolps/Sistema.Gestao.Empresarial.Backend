@@ -138,6 +138,26 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
             RequirePermissionAttribute.PolicyPrefix + PermissionCodes.CreateSectorCategories);
     }
 
+    [Theory]
+    [InlineData("api/niveis-profissionais", "GET", PermissionCodes.ViewProfessionalLevels)]
+    [InlineData("api/niveis-profissionais/{levelGuid:guid}", "GET", PermissionCodes.ViewProfessionalLevels)]
+    [InlineData("api/niveis-profissionais", "POST", PermissionCodes.CreateProfessionalLevels)]
+    [InlineData("api/niveis-profissionais/{levelGuid:guid}", "PUT", PermissionCodes.EditProfessionalLevels)]
+    [InlineData("api/niveis-profissionais/{levelGuid:guid}/excluir", "POST", PermissionCodes.EditProfessionalLevels)]
+    public void EndpointsDeNiveisProfissionais_DevemExigirAPermissaoEspecifica(
+        string route,
+        string httpMethod,
+        string permission)
+    {
+        _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        AssertPolicy(endpoints, route, httpMethod, RequirePermissionAttribute.PolicyPrefix + permission);
+    }
+
     [Fact]
     public void Api_NaoDeveExporEndpointsHttpDelete()
     {

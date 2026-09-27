@@ -12,6 +12,8 @@ public static class PermissionCodes
     public const string CreatePositions = "CARGO_CRIAR";
     public const string EditPositions = "CARGO_EDITAR";
     public const string ViewProfessionalLevels = "NIVEL_PROFISSIONAL_VISUALIZAR";
+    public const string CreateProfessionalLevels = "NIVEL_PROFISSIONAL_CRIAR";
+    public const string EditProfessionalLevels = "NIVEL_PROFISSIONAL_EDITAR";
     public const string ViewSectors = "SETOR_VISUALIZAR";
     public const string CreateSectors = "SETOR_CRIAR";
     public const string EditSectors = "SETOR_EDITAR";
@@ -32,6 +34,8 @@ public static class PermissionCodes
         CreatePositions,
         EditPositions,
         ViewProfessionalLevels,
+        CreateProfessionalLevels,
+        EditProfessionalLevels,
         ViewSectors,
         CreateSectors,
         EditSectors,

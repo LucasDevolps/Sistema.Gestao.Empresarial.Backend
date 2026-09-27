@@ -129,7 +129,9 @@ organização antes da projeção.
 
 - `Profissao`: catálogo com nome, descrição e ciclo de vida;
 - `Cargo`: catálogo com profissão compatível opcional e ciclo de vida;
-- `NivelProfissional`: catálogo ordenado por campo estrutural `Ordem`;
+- `NivelProfissional`: catálogo configurável pelo gestor (código e nome únicos,
+  `Ordem` para apresentação), sem registros semeados e com exclusão lógica bloqueada
+  enquanto houver funcionário vinculado;
 - `Funcionario`: matrícula, dados pessoais/profissionais, profissão, cargo, nível e
   unidade de contratação;
 - `FuncionarioUnidadeAtuacao` e `FuncionarioSetor`: vínculos operacionais.
@@ -149,6 +151,12 @@ Entidades de negócio persistentes derivam dos tipos-base auditáveis e, quando
 aplicável, possuem `Ativo`, `Excluido`, `ExcluidoEm` e `ExcluidoPor`. O `AppDbContext`
 aplica filtros globais a entidades soft-deletable. Operações de negócio inativam ou
 encerram registros e vínculos, em vez de removê-los fisicamente.
+
+Níveis profissionais usam a exclusão lógica completa (`Excluido`, `ExcluidoEm`,
+`ExcluidoPor`) em vez de inativação: o registro some das consultas pelo filtro
+global, permanece no banco e libera código e nome para reutilização, pois os
+índices únicos são filtrados por `[Excluido] = 0`. Como a API não expõe HTTP
+`DELETE`, a exclusão é a ação `POST /api/niveis-profissionais/{guid}/excluir`.
 
 O contexto rejeita entradas EF no estado `Deleted`, protegendo o caminho normal de
 persistência contra exclusão física acidental. Há, porém, uma exceção operacional

@@ -10,6 +10,9 @@ public sealed record CreateProfessionalCatalogRequest(string Name, string? Descr
 public sealed record UpdateProfessionalCatalogRequest(string Name, string? Description);
 public sealed record ChangeProfessionalCatalogStatusRequest(bool Active);
 
+public sealed record CreateProfessionalLevelRequest(string Code, string Name, int Order);
+public sealed record UpdateProfessionalLevelRequest(string Code, string Name, int Order);
+
 public sealed record ProfessionalCatalogPageResponse<T>(
     IReadOnlyCollection<T> Items,
     int Page,
@@ -37,7 +40,9 @@ public sealed record ProfessionalLevelResponse(
     string Code,
     string Name,
     int Order,
-    bool Active);
+    bool Active,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
 
 public sealed record ProfessionalCatalogOperationContext(
     Guid ActorUserGuid,
@@ -93,9 +98,30 @@ public interface IProfessionalCatalogService
         ProfessionalCatalogOperationContext context,
         CancellationToken cancellationToken);
 
-    Task<IReadOnlyCollection<ProfessionalLevelResponse>> ListLevelsAsync(
-        bool? active,
+    Task<ProfessionalCatalogPageResponse<ProfessionalLevelResponse>> ListLevelsAsync(
+        ProfessionalCatalogListQuery query,
         CancellationToken cancellationToken);
 
     Task<ProfessionalLevelResponse?> GetLevelAsync(Guid levelGuid, CancellationToken cancellationToken);
+
+    Task<ProfessionalLevelResponse> CreateLevelAsync(
+        CreateProfessionalLevelRequest request,
+        ProfessionalCatalogOperationContext context,
+        CancellationToken cancellationToken);
+
+    Task<ProfessionalLevelResponse?> UpdateLevelAsync(
+        Guid levelGuid,
+        UpdateProfessionalLevelRequest request,
+        ProfessionalCatalogOperationContext context,
+        CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Exclui logicamente o nível. Retorna <c>false</c> quando o nível não existe
+    /// (ou já foi excluído); lança <c>DomainException</c> quando ele está vinculado
+    /// a algum funcionário.
+    /// </summary>
+    Task<bool> DeleteLevelAsync(
+        Guid levelGuid,
+        ProfessionalCatalogOperationContext context,
+        CancellationToken cancellationToken);
 }

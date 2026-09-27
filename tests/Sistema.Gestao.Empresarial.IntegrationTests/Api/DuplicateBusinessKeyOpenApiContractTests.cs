@@ -23,6 +23,9 @@ public sealed class DuplicateBusinessKeyOpenApiContractTests : IClassFixture<Sec
     [InlineData("PUT", "api/cargos/{positionGuid}", new[] { 200, 400, 404, 409, 422 })]
     [InlineData("POST", "api/funcionarios", new[] { 201, 400, 409, 422 })]
     [InlineData("PUT", "api/funcionarios/{employeeGuid}", new[] { 200, 400, 404, 409, 422 })]
+    [InlineData("POST", "api/niveis-profissionais", new[] { 201, 400, 409, 422 })]
+    [InlineData("PUT", "api/niveis-profissionais/{levelGuid}", new[] { 200, 400, 404, 409, 422 })]
+    [InlineData("POST", "api/niveis-profissionais/{levelGuid}/excluir", new[] { 204, 404, 409, 422 })]
     public void CadastrosComDuplicidade_DevemDeclararExatamenteOsStatusReais(
         string httpMethod,
         string relativePath,

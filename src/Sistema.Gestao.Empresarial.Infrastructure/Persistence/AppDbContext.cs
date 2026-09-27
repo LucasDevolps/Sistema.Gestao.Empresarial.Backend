@@ -255,34 +255,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
 
     private static void ConfigurarNivel(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<NivelProfissional> builder)
     {
+        // Catálogo configurável pelo gestor: nenhum nível é semeado pelo modelo. Os
+        // registros JR/PL/SR inseridos por migrations antigas são tratados pela
+        // migration NiveisProfissionaisConfiguraveis (preservados quando em uso).
         builder.ToTable("NiveisProfissionais");
         ConfigurarBase(builder);
-        builder.Property(x => x.Codigo).HasMaxLength(10).IsRequired();
-        builder.Property(x => x.Nome).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.Codigo)
+            .HasMaxLength(NivelProfissional.CodigoTamanhoMaximo)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.Property(x => x.Nome)
+            .HasMaxLength(NivelProfissional.NomeTamanhoMaximo)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
         builder.HasIndex(x => x.Codigo).IsUnique().HasFilter("[Excluido] = 0");
-
-        var seedDate = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        builder.HasData(
-            SeedNivel(1, "870D89D7-153A-46EB-93E4-A2E08E966D19", "JR", "Júnior", 1, seedDate),
-            SeedNivel(2, "9D77BFD3-DC47-44E5-A4CA-B62497CD5864", "PL", "Pleno", 2, seedDate),
-            SeedNivel(3, "E6E15AE5-FF9B-4A07-884A-5E66F805BFE0", "SR", "Sênior", 3, seedDate));
+        builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
     }
-
-    private static object SeedNivel(long id, string guid, string codigo, string nome, int ordem, DateTimeOffset date) =>
-        new
-        {
-            Id = id,
-            Guid = Guid.Parse(guid),
-            Codigo = codigo,
-            Nome = nome,
-            Ordem = ordem,
-            Ativo = true,
-            Excluido = false,
-            DataCriacao = date,
-            DataAtualizacao = date,
-            ExcluidoEm = (DateTimeOffset?)null,
-            ExcluidoPor = (Guid?)null
-        };
 
     private static void ConfigurarFuncionario(
         Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Funcionario> builder,
@@ -412,7 +400,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             SeedPermissao(14, "3713E2D5-9D19-4BAD-AEFB-C97E1AC03A2E", "SETOR_CRIAR", "Criar setores", seedDate),
             SeedPermissao(15, "819C7EB3-278F-470E-A9B2-D9DBC3C9EE87", "CATEGORIA_SETOR_VISUALIZAR", "Visualizar categorias de setor", seedDate),
             SeedPermissao(16, "72D43BB2-4DA1-4BA5-A32B-DEFCCCCC69D4", "CATEGORIA_SETOR_CRIAR", "Criar categorias de setor", seedDate),
-            SeedPermissao(17, "8E84D66F-A105-4748-86FF-E069A73F0065", "CATEGORIA_SETOR_EDITAR", "Editar categorias de setor", seedDate));
+            SeedPermissao(17, "8E84D66F-A105-4748-86FF-E069A73F0065", "CATEGORIA_SETOR_EDITAR", "Editar categorias de setor", seedDate),
+            SeedPermissao(18, "5C0F2E61-7B3D-4E0A-9F4B-2D8E6A1C9B37", "NIVEL_PROFISSIONAL_CRIAR", "Criar níveis profissionais", seedDate),
+            SeedPermissao(19, "A7E4B9D2-3C61-4F58-8E0D-6B2F1A9C4E73", "NIVEL_PROFISSIONAL_EDITAR", "Editar e excluir níveis profissionais", seedDate));
     }
 
     private static object SeedPermissao(long id, string guid, string codigo, string descricao, DateTimeOffset date) =>
