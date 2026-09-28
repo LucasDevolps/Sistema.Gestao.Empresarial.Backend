@@ -1,7 +1,7 @@
 FROM nginx:1.30.4-alpine@sha256:02b1b2a0445514891a14aa371845f6085d5d9d10d385b30d6aad606a50a29a05
 
-# Require the patched util-linux library even when the base image is pinned.
-RUN apk add --no-cache openssl su-exec 'libuuid>=2.42.3-r1' \
+# Require patched util-linux and expat libraries even when the base image is pinned.
+RUN apk add --no-cache openssl su-exec 'libuuid>=2.42.3-r1' 'libexpat>=2.8.5-r0' \
     && mkdir -p /etc/nginx/certs \
     && chown nginx:nginx /etc/nginx/certs
 
