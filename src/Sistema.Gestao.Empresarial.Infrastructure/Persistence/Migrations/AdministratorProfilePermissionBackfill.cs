@@ -57,6 +57,55 @@ WHERE pf.[Nome] = N'ADMINISTRADOR_INICIAL'
         AND existing.[Excluido] = 0);
 ";
 
+    /// <summary>Códigos introduzidos pela migration <c>NiveisProfissionaisConfiguraveis</c>.</summary>
+    public static readonly IReadOnlyList<string> ProfessionalLevelPermissionCodes =
+    [
+        "NIVEL_PROFISSIONAL_CRIAR",
+        "NIVEL_PROFISSIONAL_EDITAR",
+    ];
+
+    /// <summary>
+    /// Associa as permissões de escrita de níveis profissionais ao perfil
+    /// administrativo inicial existente. Mesmas garantias de idempotência de
+    /// <see cref="GrantSectorPermissionsToInitialAdministratorSql"/>.
+    /// </summary>
+    public const string GrantProfessionalLevelPermissionsToInitialAdministratorSql = @"
+DECLARE @provisionedAt datetimeoffset(0) = '2026-01-01T00:00:00+00:00';
+
+INSERT INTO [sge].[PerfisPermissoes]
+    ([Guid], [PerfilId], [PermissaoId], [Ativo], [Excluido], [DataCriacao], [DataAtualizacao])
+SELECT NEWID(), pf.[Id], pm.[Id], 1, 0, @provisionedAt, @provisionedAt
+FROM [sge].[Perfis] AS pf
+CROSS JOIN [sge].[Permissoes] AS pm
+WHERE pf.[Nome] = N'ADMINISTRADOR_INICIAL'
+  AND pf.[Excluido] = 0
+  AND pm.[Excluido] = 0
+  AND pm.[Codigo] IN (N'NIVEL_PROFISSIONAL_CRIAR', N'NIVEL_PROFISSIONAL_EDITAR')
+  AND NOT EXISTS (
+      SELECT 1
+      FROM [sge].[PerfisPermissoes] AS existing
+      WHERE existing.[PerfilId] = pf.[Id]
+        AND existing.[PermissaoId] = pm.[Id]
+        AND existing.[Excluido] = 0);
+";
+
+    /// <summary>
+    /// Reversão das permissões de níveis: remove todas as associações (perfis e
+    /// concessões diretas a usuários) a essas duas permissões, que deixam de existir
+    /// no catálogo — sem isso a FK <c>Restrict</c> impediria o <c>Down</c>.
+    /// </summary>
+    public const string RevokeProfessionalLevelPermissionsSql = @"
+DELETE existing
+FROM [sge].[PerfisPermissoes] AS existing
+INNER JOIN [sge].[Permissoes] AS pm ON pm.[Id] = existing.[PermissaoId]
+WHERE pm.[Codigo] IN (N'NIVEL_PROFISSIONAL_CRIAR', N'NIVEL_PROFISSIONAL_EDITAR');
+
+DELETE existing
+FROM [sge].[UsuariosPermissoes] AS existing
+INNER JOIN [sge].[Permissoes] AS pm ON pm.[Id] = existing.[PermissaoId]
+WHERE pm.[Codigo] IN (N'NIVEL_PROFISSIONAL_CRIAR', N'NIVEL_PROFISSIONAL_EDITAR');
+";
+
     /// <summary>
     /// Reversão: remove as associações criadas acima. Necessária no <c>Down</c>
     /// porque a FK <c>PerfisPermissoes → Permissoes</c> é <c>Restrict</c> e a

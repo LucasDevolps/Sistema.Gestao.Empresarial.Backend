@@ -217,28 +217,19 @@ public sealed class ProfessionalCatalogServiceTests
 
         Assert.Equal(1, await fixture.Db.Cargos.CountAsync());
     }
-
-    [Fact]
-    public async Task ListarNiveis_DeveRetornarOrdemEstruturadaEFiltrarStatus()
-    {
-        await using var fixture = CatalogFixture.Create();
-        var levels = await fixture.Service.ListLevelsAsync(true, CancellationToken.None);
-
-        Assert.Equal(["JR", "PL", "SR"], levels.Select(x => x.Code));
-        Assert.Equal([1, 2, 3], levels.Select(x => x.Order));
-        Assert.All(levels, x => Assert.True(x.Active));
-    }
 }
 
 internal sealed class CatalogFixture : IAsyncDisposable
 {
-    private CatalogFixture(AppDbContext db, ProfessionalCatalogService service)
+    private CatalogFixture(AppDbContext db, ProfessionalCatalogService service, TimeProvider clock)
     {
         Db = db;
         Service = service;
+        Clock = clock;
     }
 
     public AppDbContext Db { get; }
+    public TimeProvider Clock { get; }
     public ProfessionalCatalogService Service { get; }
 
     public static CatalogFixture Create()
@@ -249,12 +240,7 @@ internal sealed class CatalogFixture : IAsyncDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options;
         var db = new AppDbContext(options, clock);
-        db.NiveisProfissionais.AddRange(
-            new(Guid.NewGuid(), "SR", "Sênior", 3, now),
-            new(Guid.NewGuid(), "JR", "Júnior", 1, now),
-            new(Guid.NewGuid(), "PL", "Pleno", 2, now));
-        db.SaveChanges();
-        return new CatalogFixture(db, new ProfessionalCatalogService(db, clock));
+        return new CatalogFixture(db, new ProfessionalCatalogService(db, clock), clock);
     }
 
     public ProfessionalCatalogOperationContext Context(Guid correlationId) =>

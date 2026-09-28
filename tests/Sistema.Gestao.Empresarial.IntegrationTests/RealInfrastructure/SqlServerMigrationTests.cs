@@ -17,6 +17,7 @@ public sealed class SqlServerMigrationTests(RealInfrastructureFixture fixture)
 
         Assert.Empty(pending);
         Assert.Contains(applied, migration => migration.EndsWith("ProfessionalCatalogUseCases"));
+        Assert.Contains(applied, migration => migration.EndsWith("NiveisProfissionaisConfiguraveis"));
     }
 
     [RealInfrastructureFact]
@@ -33,8 +34,9 @@ public sealed class SqlServerMigrationTests(RealInfrastructureFixture fixture)
                 (SELECT COUNT(*) FROM sys.indexes WHERE name = 'IX_Funcionarios_Email' AND is_unique = 1 AND filter_definition LIKE '%Excluido%'),
                 (SELECT COUNT(*) FROM sys.indexes WHERE name = 'IX_FuncionariosUnidadesAtuacao_FuncionarioId_UnidadeHospitalarId' AND is_unique = 1 AND filter_definition LIKE '%Ativo%' AND filter_definition LIKE '%Excluido%'),
                 (SELECT COUNT(*) FROM sys.indexes WHERE name = 'IX_FuncionariosSetores_FuncionarioId_SetorId' AND is_unique = 1 AND filter_definition LIKE '%Ativo%' AND filter_definition LIKE '%Excluido%'),
-                (SELECT COUNT(*) FROM [sge].[NiveisProfissionais] WHERE [Codigo] IN ('JR', 'PL', 'SR') AND [Ativo] = 1),
-                (SELECT COUNT(*) FROM [sge].[Permissoes] WHERE [Codigo] IN ('PROFISSAO_EDITAR', 'CARGO_VISUALIZAR', 'CARGO_CRIAR', 'CARGO_EDITAR', 'NIVEL_PROFISSIONAL_VISUALIZAR') AND [Ativo] = 1);
+                (SELECT COUNT(*) FROM [sge].[NiveisProfissionais] WHERE [Codigo] IN ('JR', 'PL', 'SR') AND [Excluido] = 0),
+                (SELECT COUNT(*) FROM [sge].[Permissoes] WHERE [Codigo] IN ('PROFISSAO_EDITAR', 'CARGO_VISUALIZAR', 'CARGO_CRIAR', 'CARGO_EDITAR', 'NIVEL_PROFISSIONAL_VISUALIZAR', 'NIVEL_PROFISSIONAL_CRIAR', 'NIVEL_PROFISSIONAL_EDITAR') AND [Ativo] = 1),
+                (SELECT COUNT(*) FROM [sge].[NiveisProfissionais] WHERE [Id] IN (1, 2, 3) AND [Excluido] = 1 AND [ExcluidoPor] IS NULL);
             """;
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -42,8 +44,11 @@ public sealed class SqlServerMigrationTests(RealInfrastructureFixture fixture)
         Assert.Equal(1, reader.GetInt32(1));
         Assert.Equal(1, reader.GetInt32(2));
         Assert.Equal(1, reader.GetInt32(3));
-        Assert.Equal(3, reader.GetInt32(4));
-        Assert.Equal(5, reader.GetInt32(5));
+        // Instalação nova: os níveis de exemplo não ficam disponíveis, mas nunca são
+        // removidos fisicamente (exclusão lógica feita pela migration, sem ator).
+        Assert.Equal(0, reader.GetInt32(4));
+        Assert.Equal(7, reader.GetInt32(5));
+        Assert.Equal(3, reader.GetInt32(6));
     }
 
     [RealInfrastructureFact]
@@ -63,7 +68,15 @@ public sealed class SqlServerMigrationTests(RealInfrastructureFixture fixture)
                 (SELECT COUNT(*) FROM sys.indexes
                     WHERE name = 'IX_Profissoes_Nome' AND is_unique = 1 AND filter_definition LIKE '%Excluido%'),
                 (SELECT COUNT(*) FROM sys.indexes
-                    WHERE name = 'IX_Cargos_Nome' AND is_unique = 1 AND filter_definition LIKE '%Excluido%');
+                    WHERE name = 'IX_Cargos_Nome' AND is_unique = 1 AND filter_definition LIKE '%Excluido%'),
+                (SELECT collation_name FROM sys.columns
+                    WHERE object_id = OBJECT_ID('sge.NiveisProfissionais') AND name = 'Codigo'),
+                (SELECT collation_name FROM sys.columns
+                    WHERE object_id = OBJECT_ID('sge.NiveisProfissionais') AND name = 'Nome'),
+                (SELECT COUNT(*) FROM sys.indexes
+                    WHERE name = 'IX_NiveisProfissionais_Codigo' AND is_unique = 1 AND filter_definition LIKE '%Excluido%'),
+                (SELECT COUNT(*) FROM sys.indexes
+                    WHERE name = 'IX_NiveisProfissionais_Nome' AND is_unique = 1 AND filter_definition LIKE '%Excluido%');
             """;
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -71,5 +84,9 @@ public sealed class SqlServerMigrationTests(RealInfrastructureFixture fixture)
         Assert.Equal("Latin1_General_CI_AS", reader.GetString(1));
         Assert.Equal(1, reader.GetInt32(2));
         Assert.Equal(1, reader.GetInt32(3));
+        Assert.Equal("Latin1_General_CI_AS", reader.GetString(4));
+        Assert.Equal("Latin1_General_CI_AS", reader.GetString(5));
+        Assert.Equal(1, reader.GetInt32(6));
+        Assert.Equal(1, reader.GetInt32(7));
     }
 }
