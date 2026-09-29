@@ -115,7 +115,8 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
         AssertPolicy(
             endpoints,
             "api/unidades-hospitalares",
-            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewEmployees);
+            HttpMethods.Get,
+            RequirePermissionAttribute.PolicyPrefix + PermissionCodes.ViewHospitalUnits);
         AssertPolicy(
             endpoints,
             "api/setores",

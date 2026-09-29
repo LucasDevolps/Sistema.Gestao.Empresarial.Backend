@@ -1,10 +1,18 @@
+using Sistema.Gestao.Empresarial.Domain.Organizacoes;
+
 namespace Sistema.Gestao.Empresarial.Application.Organizations;
 
 public sealed record OrganizationCatalogListQuery(
     string? Search,
     bool? Active,
     int Page = 1,
-    int PageSize = 50);
+    int PageSize = 50,
+    string? LegalName = null,
+    string? Cnpj = null,
+    string? Cnes = null,
+    string? City = null,
+    string? State = null,
+    Guid? OrganizationGuid = null);
 
 public sealed record SectorListQuery(
     string? Search,
@@ -27,13 +35,77 @@ public sealed record OrganizationResponse(
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt);
 
+/// <summary>Consulta completa da unidade hospitalar.</summary>
 public sealed record HospitalUnitResponse(
-    Guid Guid,
-    string Name,
-    bool Active,
-    OrganizationReferenceResponse Organization,
-    DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    Guid Guid, string Name, bool Active, OrganizationReferenceResponse Organization,
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+{
+    public string? LegalName { get; init; }
+    public string? Cnpj { get; init; }
+    public bool HasOwnCnpj { get; init; }
+    public string? Cnes { get; init; }
+    public TipoUnidadeHospitalar? UnitType { get; init; }
+    public NaturezaUnidadeHospitalar? Nature { get; init; }
+    public string? InternalCode { get; init; }
+    public string? Acronym { get; init; }
+    public DateOnly? ActivityStartDate { get; init; }
+    public string? RegistrationStatus { get; init; }
+    public DateOnly? OpeningDate { get; init; }
+    public string? LegalNature { get; init; }
+    public string? PrimaryCnae { get; init; }
+    public string? SecondaryCnaes { get; init; }
+    public string? StateRegistration { get; init; }
+    public string? MunicipalRegistration { get; init; }
+    public string? PostalCode { get; init; }
+    public string? Street { get; init; }
+    public string? Number { get; init; }
+    public string? Complement { get; init; }
+    public string? District { get; init; }
+    public string? City { get; init; }
+    public string? State { get; init; }
+    public string? IbgeCode { get; init; }
+    public string? Region { get; init; }
+    public string? AreaCode { get; init; }
+    public string? AddressReference { get; init; }
+    public string? Phone { get; init; }
+    public string? SecondaryPhone { get; init; }
+    public string? Whatsapp { get; init; }
+    public string? Email { get; init; }
+    public string? AdministrativeEmail { get; init; }
+    public string? Website { get; init; }
+    public string? Extension { get; init; }
+    public string? AdministrativeResponsibleName { get; init; }
+    public string? AdministrativeResponsibleRole { get; init; }
+    public string? AdministrativeResponsibleEmail { get; init; }
+    public string? AdministrativeResponsiblePhone { get; init; }
+    public string? TechnicalResponsibleName { get; init; }
+    public string? TechnicalResponsibleProfession { get; init; }
+    public string? TechnicalResponsibleCouncil { get; init; }
+    public string? TechnicalResponsibleCouncilNumber { get; init; }
+    public string? TechnicalResponsibleCouncilState { get; init; }
+    public string? TechnicalResponsibleEmail { get; init; }
+    public string? TechnicalResponsiblePhone { get; init; }
+    public string? ClinicalDirectorName { get; init; }
+    public string? ClinicalDirectorCrm { get; init; }
+    public string? ClinicalDirectorCrmState { get; init; }
+    public string? ClinicalDirectorEmail { get; init; }
+    public string? ClinicalDirectorPhone { get; init; }
+    public string? SanitaryPermit { get; init; }
+    public DateOnly? SanitaryPermitExpiry { get; init; }
+    public string? OperatingLicense { get; init; }
+    public DateOnly? OperatingLicenseExpiry { get; init; }
+    public string? RegulatoryNotes { get; init; }
+    public bool? Open24Hours { get; init; }
+    public bool? HasEmergencyRoom { get; init; }
+    public bool? HasInpatientCare { get; init; }
+    public bool? HasIcu { get; init; }
+    public int? TotalBeds { get; init; }
+    public int? IcuBeds { get; init; }
+    public bool? HasSurgicalCenter { get; init; }
+    public bool? HasMaternity { get; init; }
+    public bool? HasOutpatientCare { get; init; }
+    public string? Notes { get; init; }
+}
 
 public sealed record OrganizationReferenceResponse(Guid Guid, string Name);
 
@@ -44,7 +116,7 @@ public sealed record SectorCategoryReferenceResponse(Guid Guid, string Name);
 public sealed record SectorResponsibleResponse(Guid Guid, string Name, string RegistrationNumber);
 
 public sealed record HospitalUnitPageResponse(
-    IReadOnlyCollection<HospitalUnitResponse> Items,
+    IReadOnlyCollection<HospitalUnitSummaryResponse> Items,
     int Page,
     int PageSize,
     int Total);
@@ -157,6 +229,11 @@ public sealed record SectorOperationContext(
 
 public interface IOrganizationCatalogService
 {
+    Task<HospitalUnitResponse> CreateHospitalUnitAsync(HospitalUnitRegistrationRequest request, HospitalUnitOperationContext context, CancellationToken cancellationToken);
+    Task<HospitalUnitResponse?> UpdateHospitalUnitAsync(Guid unitGuid, HospitalUnitRegistrationRequest request, HospitalUnitOperationContext context, CancellationToken cancellationToken);
+    Task<HospitalUnitResponse?> ChangeHospitalUnitStatusAsync(Guid unitGuid, bool active, HospitalUnitOperationContext context, CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<HospitalUnitSummaryResponse>> FindHospitalUnitDuplicatesAsync(Guid actorUserGuid, HospitalUnitDuplicateQuery query, CancellationToken cancellationToken);
+
     Task<OrganizationResponse> GetCurrentOrganizationAsync(
         Guid actorUserGuid,
         CancellationToken cancellationToken);

@@ -45,15 +45,21 @@ public sealed partial class ProfessionalLevelMigrationTests(RealInfrastructureFi
             var organization = new Organizacao(Guid.NewGuid(), "Rede legada", now);
             db.Organizacoes.Add(organization);
             await db.SaveChangesAsync();
-            var unit = new UnidadeHospitalar(Guid.NewGuid(), organization.Id, "Hospital legado", now);
+            // Este cenário usa schema histórico: insere somente colunas daquela migration.
+            var unitGuid = Guid.NewGuid();
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO sge.UnidadesHospitalares (Guid, OrganizacaoId, Nome, Ativo, Excluido, DataCriacao, DataAtualizacao)
+                VALUES ({unitGuid}, {organization.Id}, N'Hospital legado', 1, 0, {now}, {now});
+                """);
+            var unitId = await db.UnidadesHospitalares.Where(x => x.Guid == unitGuid).Select(x => x.Id).SingleAsync();
             var profession = new Profissao(Guid.NewGuid(), "Administração", null, now);
             var position = new Cargo(Guid.NewGuid(), "Administrador", null, now);
             var profile = new Perfil(Guid.NewGuid(), "ADMINISTRADOR_INICIAL", "Perfil de teste", now);
-            db.AddRange(unit, profession, position, profile);
+            db.AddRange(profession, position, profile);
             await db.SaveChangesAsync();
             db.Funcionarios.Add(new Funcionario(
                 Guid.NewGuid(), "Administrador", "admin-legado@hospital.test", null,
-                profession.Id, position.Id, LegacySeniorId, unit.Id, new DateOnly(2025, 1, 1), now));
+                profession.Id, position.Id, LegacySeniorId, unitId, new DateOnly(2025, 1, 1), now));
             var permissions = await db.Permissoes.AsNoTracking().ToListAsync();
             permissionsBefore = permissions.Count;
             db.PerfisPermissoes.AddRange(permissions.Select(p =>
@@ -63,7 +69,7 @@ public sealed partial class ProfessionalLevelMigrationTests(RealInfrastructureFi
 
         await using (var db = scratch.CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.GetService<IMigrator>().MigrateAsync(TargetMigration);
         }
 
         await using (var db = scratch.CreateContext())
@@ -103,7 +109,7 @@ public sealed partial class ProfessionalLevelMigrationTests(RealInfrastructureFi
 
         await using (var db = scratch.CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.GetService<IMigrator>().MigrateAsync(TargetMigration);
         }
 
         Guid recreatedJuniorGuid;
@@ -157,7 +163,7 @@ public sealed partial class ProfessionalLevelMigrationTests(RealInfrastructureFi
         // Reaplicar a migration funciona e não toca no nível cadastrado pelo gestor.
         await using (var db = scratch.CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.GetService<IMigrator>().MigrateAsync(TargetMigration);
             Assert.Contains(TargetMigration, await db.Database.GetAppliedMigrationsAsync());
             var active = await db.NiveisProfissionais.ToListAsync();
             Assert.Equal(recreatedJuniorGuid, Assert.Single(active).Guid);

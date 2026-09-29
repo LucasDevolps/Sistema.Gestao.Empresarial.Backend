@@ -2,6 +2,9 @@ namespace Sistema.Gestao.Empresarial.Application.Authorization;
 
 public static class PermissionCodes
 {
+    public const string ViewHospitalUnits = "UNIDADE_HOSPITALAR_VISUALIZAR";
+    public const string CreateHospitalUnits = "UNIDADE_HOSPITALAR_CRIAR";
+    public const string EditHospitalUnits = "UNIDADE_HOSPITALAR_EDITAR";
     public const string ViewEmployees = "FUNCIONARIO_VISUALIZAR";
     public const string CreateEmployees = "FUNCIONARIO_CRIAR";
     public const string EditEmployees = "FUNCIONARIO_EDITAR";
@@ -24,6 +27,9 @@ public static class PermissionCodes
 
     public static IReadOnlyCollection<string> All { get; } =
     [
+        ViewHospitalUnits,
+        CreateHospitalUnits,
+        EditHospitalUnits,
         ViewEmployees,
         CreateEmployees,
         EditEmployees,
