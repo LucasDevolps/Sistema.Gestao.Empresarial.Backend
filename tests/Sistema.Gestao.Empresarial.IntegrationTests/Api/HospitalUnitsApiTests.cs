@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Hosting;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -8,6 +7,7 @@ using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Domain.Seguranca;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
+using Swashbuckle.AspNetCore.Swagger;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.Api;
 
@@ -267,17 +267,19 @@ public sealed class HospitalUnitsApiTests
     [Fact]
     public async Task OpenApi_ExposesNewRoutesAndRegistrationSchema()
     {
+        // Gera o documento direto pelo ISwaggerProvider (sempre registrado) em vez de
+        // pedir /swagger/v1/swagger.json: o middleware só é exposto conforme ambiente
+        // e configuração, e o contrato não deve depender disso.
         await using var factory = new ProfessionalLevelsApiFactory();
-        await using var host = factory.WithWebHostBuilder(builder => builder.UseSetting("Swagger:Enabled", "true"));
-        using var client = host.CreateClient(new() { BaseAddress = new Uri("https://localhost") });
-        var document = await client.GetFromJsonAsync<JsonObject>("/swagger/v1/swagger.json");
-        var paths = document!["paths"]!;
-        Assert.NotNull(paths[Route]!["post"]!["responses"]!["201"]);
-        Assert.NotNull(paths[$"{Route}/{{unitGuid}}"]!["put"]!["responses"]!["409"]);
-        Assert.NotNull(paths[$"{Route}/{{unitGuid}}/status"]!["patch"]);
-        Assert.NotNull(paths[$"{Route}/consulta-cnpj"]!["get"]!["responses"]!["503"]);
-        Assert.NotNull(paths[$"{Route}/consulta-cep"]!["get"]!["responses"]!["404"]);
-        Assert.NotNull(document["components"]!["schemas"]!["HospitalUnitRegistrationRequest"]!["properties"]!["administrativeResponsibleName"]);
+        factory.CreateClient();
+        var document = factory.Services.GetRequiredService<ISwaggerProvider>().GetSwagger("v1");
+        var paths = document.Paths;
+        Assert.True(paths[Route].Operations![HttpMethod.Post].Responses!.ContainsKey("201"));
+        Assert.True(paths[$"{Route}/{{unitGuid}}"].Operations![HttpMethod.Put].Responses!.ContainsKey("409"));
+        Assert.True(paths[$"{Route}/{{unitGuid}}/status"].Operations!.ContainsKey(HttpMethod.Patch));
+        Assert.True(paths[$"{Route}/consulta-cnpj"].Operations![HttpMethod.Get].Responses!.ContainsKey("503"));
+        Assert.True(paths[$"{Route}/consulta-cep"].Operations![HttpMethod.Get].Responses!.ContainsKey("404"));
+        Assert.True(document.Components!.Schemas!["HospitalUnitRegistrationRequest"].Properties!.ContainsKey("administrativeResponsibleName"));
     }
 
     internal static async Task<Guid> SeedActor(ProfessionalLevelsApiFactory factory, params string[] permissions)
