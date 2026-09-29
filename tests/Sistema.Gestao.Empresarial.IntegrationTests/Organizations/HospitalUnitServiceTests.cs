@@ -12,8 +12,14 @@ public sealed class HospitalUnitServiceTests
 {
     internal static HospitalUnitRegistrationRequest Request(string name = "Hospital Novo") => new()
     {
-        Name = name, LegalName = "Empresa Hospitalar", PostalCode = "01001-000", Street = "Praça da Sé",
-        Number = "10", District = "Sé", City = "São Paulo", State = "SP"
+        Name = name,
+        LegalName = "Empresa Hospitalar",
+        PostalCode = "01001-000",
+        Street = "Praça da Sé",
+        Number = "10",
+        District = "Sé",
+        City = "São Paulo",
+        State = "SP"
     };
     private static HospitalUnitOperationContext Context(OrganizationCatalogFixture f) =>
         new(f.Actor.Guid, Guid.NewGuid(), "trace-hospital", "127.0.0.1");

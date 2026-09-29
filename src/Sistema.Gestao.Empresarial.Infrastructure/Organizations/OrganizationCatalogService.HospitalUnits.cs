@@ -196,7 +196,14 @@ public sealed partial class OrganizationCatalogService
     // Auditoria institucional mínima: não copia contatos ou dados pessoais dos responsáveis.
     private static object HospitalSnapshot(UnidadeHospitalar unit) => new
     {
-        unit.Guid, unit.Nome, unit.Ativo, unit.CodigoInterno, unit.Tipo, unit.Natureza, unit.Cidade, unit.Uf
+        unit.Guid,
+        unit.Nome,
+        unit.Ativo,
+        unit.CodigoInterno,
+        unit.Tipo,
+        unit.Natureza,
+        unit.Cidade,
+        unit.Uf
     };
 
     public async Task<IReadOnlyCollection<HospitalUnitSummaryResponse>> FindHospitalUnitDuplicatesAsync(Guid actorUserGuid, HospitalUnitDuplicateQuery query, CancellationToken cancellationToken)

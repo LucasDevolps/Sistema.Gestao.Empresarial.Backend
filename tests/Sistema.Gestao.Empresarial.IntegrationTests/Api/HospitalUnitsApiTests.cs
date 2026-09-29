@@ -17,13 +17,24 @@ public sealed class HospitalUnitsApiTests
 
     internal static JsonObject Payload() => new()
     {
-        ["name"] = "Hospital Central", ["legalName"] = "Hospital Central Ltda",
-        ["cnpj"] = "11.222.333/0001-81", ["cnes"] = "1234567", ["internalCode"] = " HC ",
-        ["postalCode"] = "01001-000", ["street"] = "Praça da Sé", ["number"] = "10",
-        ["district"] = "Sé", ["city"] = "São Paulo", ["state"] = "sp",
-        ["totalBeds"] = 20, ["icuBeds"] = 4, ["administrativeResponsibleName"] = "Maria",
-        ["technicalResponsibleCouncil"] = "CRM", ["clinicalDirectorCrm"] = "12345",
-        ["sanitaryPermit"] = "ALV-1", ["hasEmergencyRoom"] = true
+        ["name"] = "Hospital Central",
+        ["legalName"] = "Hospital Central Ltda",
+        ["cnpj"] = "11.222.333/0001-81",
+        ["cnes"] = "1234567",
+        ["internalCode"] = " HC ",
+        ["postalCode"] = "01001-000",
+        ["street"] = "Praça da Sé",
+        ["number"] = "10",
+        ["district"] = "Sé",
+        ["city"] = "São Paulo",
+        ["state"] = "sp",
+        ["totalBeds"] = 20,
+        ["icuBeds"] = 4,
+        ["administrativeResponsibleName"] = "Maria",
+        ["technicalResponsibleCouncil"] = "CRM",
+        ["clinicalDirectorCrm"] = "12345",
+        ["sanitaryPermit"] = "ALV-1",
+        ["hasEmergencyRoom"] = true
     };
 
     [Fact]

@@ -7,8 +7,15 @@ public sealed class UnidadeHospitalarTests
 {
     private static CadastroUnidadeHospitalar Valid() => new()
     {
-        Nome = " Hospital Central ", Cnpj = "11.222.333/0001-81", RazaoSocial = "Hospital Ltda",
-        Cep = "01001-000", Logradouro = "Praça da Sé", Numero = "10", Bairro = "Sé", Cidade = "São Paulo", Uf = "sp"
+        Nome = " Hospital Central ",
+        Cnpj = "11.222.333/0001-81",
+        RazaoSocial = "Hospital Ltda",
+        Cep = "01001-000",
+        Logradouro = "Praça da Sé",
+        Numero = "10",
+        Bairro = "Sé",
+        Cidade = "São Paulo",
+        Uf = "sp"
     };
 
     [Fact]

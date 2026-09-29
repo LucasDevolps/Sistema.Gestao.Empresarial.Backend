@@ -22,7 +22,8 @@ public sealed class HospitalLookupServiceTests
         await using var f = await OrganizationCatalogFixture.CreateAsync();
         var created = await f.Service.CreateHospitalUnitAsync(HospitalUnitServiceTests.Request() with
         {
-            Cnpj = result.Data.Cnpj, RegistrationStatus = result.Data.RegistrationStatus
+            Cnpj = result.Data.Cnpj,
+            RegistrationStatus = result.Data.RegistrationStatus
         }, new(f.Actor.Guid, Guid.NewGuid(), "inactive-cnpj", null), default);
         Assert.Equal("BAIXADA", created.RegistrationStatus);
     }
