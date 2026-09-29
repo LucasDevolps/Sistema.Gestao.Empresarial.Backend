@@ -952,8 +952,65 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
 
+                    b.Property<string>("AlvaraSanitario")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool?>("Atendimento24h")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("AtendimentoAmbulatorial")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("Ativo")
                         .HasColumnType("bit");
+
+                    b.Property<string>("Bairro")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool?>("CentroCirurgico")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Cep")
+                        .HasMaxLength(8)
+                        .HasColumnType("nvarchar(8)");
+
+                    b.Property<string>("Cidade")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("CnaePrincipal")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("CnaesSecundarios")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("Cnes")
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
+
+                    b.Property<string>("Cnpj")
+                        .HasMaxLength(14)
+                        .HasColumnType("nvarchar(14)");
+
+                    b.Property<string>("CodigoIbge")
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
+
+                    b.Property<string>("CodigoInterno")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .UseCollation("Latin1_General_CI_AS");
+
+                    b.Property<string>("Complemento")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<DateOnly?>("DataAbertura")
+                        .HasColumnType("date");
 
                     b.Property<DateTimeOffset>("DataAtualizacao")
                         .HasPrecision(0)
@@ -962,6 +1019,38 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                     b.Property<DateTimeOffset>("DataCriacao")
                         .HasPrecision(0)
                         .HasColumnType("datetimeoffset(0)");
+
+                    b.Property<string>("Ddd")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("DiretorClinicoCrm")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("DiretorClinicoEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
+
+                    b.Property<string>("DiretorClinicoNome")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("DiretorClinicoTelefone")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("DiretorClinicoUf")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("EmailAdministrativo")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
+
+                    b.Property<string>("EmailInstitucional")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
 
                     b.Property<bool>("Excluido")
                         .HasColumnType("bit");
@@ -976,13 +1065,165 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Guid")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<DateOnly?>("InicioAtividades")
+                        .HasColumnType("date");
+
+                    b.Property<string>("InscricaoEstadual")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("InscricaoMunicipal")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool?>("Internacao")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("LeitosUti")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LicencaFuncionamento")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Logradouro")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<bool?>("Maternidade")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("Natureza")
+                        .HasColumnType("int");
+
+                    b.Property<string>("NaturezaJuridica")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<string>("Nome")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("Numero")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ObservacoesGerais")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("ObservacoesRegulatorias")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<long>("OrganizacaoId")
                         .HasColumnType("bigint");
+
+                    b.Property<bool>("PossuiCnpjProprio")
+                        .HasColumnType("bit");
+
+                    b.Property<bool?>("ProntoSocorro")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Ramal")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("RazaoSocial")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ReferenciaEndereco")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("Regiao")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ResponsavelAdministrativoCargo")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("ResponsavelAdministrativoEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
+
+                    b.Property<string>("ResponsavelAdministrativoNome")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ResponsavelAdministrativoTelefone")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ResponsavelTecnicoConselho")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ResponsavelTecnicoEmail")
+                        .HasMaxLength(254)
+                        .HasColumnType("nvarchar(254)");
+
+                    b.Property<string>("ResponsavelTecnicoNome")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("ResponsavelTecnicoProfissao")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("ResponsavelTecnicoRegistro")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("ResponsavelTecnicoTelefone")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("ResponsavelTecnicoUf")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<string>("Sigla")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Site")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("SituacaoCadastral")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("TelefonePrincipal")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<string>("TelefoneSecundario")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("Tipo")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TotalLeitos")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Uf")
+                        .HasMaxLength(2)
+                        .HasColumnType("nvarchar(2)");
+
+                    b.Property<bool?>("Uti")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly?>("ValidadeAlvaraSanitario")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly?>("ValidadeLicencaFuncionamento")
+                        .HasColumnType("date");
 
                     b.Property<byte[]>("Versao")
                         .IsConcurrencyToken()
@@ -990,14 +1231,30 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("Whatsapp")
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("Cnes")
+                        .IsUnique()
+                        .HasFilter("[Cnes] IS NOT NULL");
+
+                    b.HasIndex("Cnpj")
+                        .IsUnique()
+                        .HasFilter("[Cnpj] IS NOT NULL");
 
                     b.HasIndex("Guid")
                         .IsUnique();
 
-                    b.HasIndex("OrganizacaoId", "Nome")
+                    b.HasIndex("OrganizacaoId", "CodigoInterno")
                         .IsUnique()
-                        .HasFilter("[Excluido] = 0");
+                        .HasFilter("[CodigoInterno] IS NOT NULL");
+
+                    b.HasIndex("OrganizacaoId", "Nome");
+
+                    b.HasIndex("OrganizacaoId", "Cidade", "Uf");
 
                     b.ToTable("UnidadesHospitalares", "sge");
                 });
@@ -1307,7 +1564,8 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                     b.Property<string>("Codigo")
                         .IsRequired()
                         .HasMaxLength(10)
-                        .HasColumnType("nvarchar(10)");
+                        .HasColumnType("nvarchar(10)")
+                        .UseCollation("Latin1_General_CI_AS");
 
                     b.Property<DateTimeOffset>("DataAtualizacao")
                         .HasPrecision(0)
@@ -1333,7 +1591,8 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                     b.Property<string>("Nome")
                         .IsRequired()
                         .HasMaxLength(80)
-                        .HasColumnType("nvarchar(80)");
+                        .HasColumnType("nvarchar(80)")
+                        .UseCollation("Latin1_General_CI_AS");
 
                     b.Property<int>("Ordem")
                         .HasColumnType("int");
@@ -1353,45 +1612,11 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                     b.HasIndex("Guid")
                         .IsUnique();
 
-                    b.ToTable("NiveisProfissionais", "sge");
+                    b.HasIndex("Nome")
+                        .IsUnique()
+                        .HasFilter("[Excluido] = 0");
 
-                    b.HasData(
-                        new
-                        {
-                            Id = 1L,
-                            Ativo = true,
-                            Codigo = "JR",
-                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            Excluido = false,
-                            Guid = new Guid("870d89d7-153a-46eb-93e4-a2e08e966d19"),
-                            Nome = "Júnior",
-                            Ordem = 1
-                        },
-                        new
-                        {
-                            Id = 2L,
-                            Ativo = true,
-                            Codigo = "PL",
-                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            Excluido = false,
-                            Guid = new Guid("9d77bfd3-dc47-44e5-a4ca-b62497cd5864"),
-                            Nome = "Pleno",
-                            Ordem = 2
-                        },
-                        new
-                        {
-                            Id = 3L,
-                            Ativo = true,
-                            Codigo = "SR",
-                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            Excluido = false,
-                            Guid = new Guid("e6e15ae5-ff9b-4a07-884a-5e66f805bfe0"),
-                            Nome = "Sênior",
-                            Ordem = 3
-                        });
+                    b.ToTable("NiveisProfissionais", "sge");
                 });
 
             modelBuilder.Entity("Sistema.Gestao.Empresarial.Domain.Pessoas.Profissao", b =>
@@ -1817,6 +2042,61 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                             Descricao = "Editar categorias de setor",
                             Excluido = false,
                             Guid = new Guid("8e84d66f-a105-4748-86ff-e069a73f0065")
+                        },
+                        new
+                        {
+                            Id = 18L,
+                            Ativo = true,
+                            Codigo = "NIVEL_PROFISSIONAL_CRIAR",
+                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Descricao = "Criar níveis profissionais",
+                            Excluido = false,
+                            Guid = new Guid("5c0f2e61-7b3d-4e0a-9f4b-2d8e6a1c9b37")
+                        },
+                        new
+                        {
+                            Id = 20L,
+                            Ativo = true,
+                            Codigo = "UNIDADE_HOSPITALAR_VISUALIZAR",
+                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Descricao = "Visualizar unidades hospitalares",
+                            Excluido = false,
+                            Guid = new Guid("dc8b286a-4053-4083-903d-d3b021204fe4")
+                        },
+                        new
+                        {
+                            Id = 21L,
+                            Ativo = true,
+                            Codigo = "UNIDADE_HOSPITALAR_CRIAR",
+                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Descricao = "Criar unidades hospitalares",
+                            Excluido = false,
+                            Guid = new Guid("556fc8dd-4b61-4d42-88a3-da101fd59af7")
+                        },
+                        new
+                        {
+                            Id = 22L,
+                            Ativo = true,
+                            Codigo = "UNIDADE_HOSPITALAR_EDITAR",
+                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Descricao = "Editar unidades hospitalares",
+                            Excluido = false,
+                            Guid = new Guid("f72a18c9-5df5-401f-b5f9-8e39f3f00574")
+                        },
+                        new
+                        {
+                            Id = 19L,
+                            Ativo = true,
+                            Codigo = "NIVEL_PROFISSIONAL_EDITAR",
+                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
+                            Descricao = "Editar e excluir níveis profissionais",
+                            Excluido = false,
+                            Guid = new Guid("a7e4b9d2-3c61-4f58-8e0d-6b2f1a9c4e73")
                         });
                 });
 

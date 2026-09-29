@@ -1,0 +1,82 @@
+@baseUrl = https://localhost:8443
+@token = REPLACE_WITH_ACCESS_TOKEN
+@unitGuid = 00000000-0000-0000-0000-000000000000
+
+### Listar (search filtra nome fantasia; demais filtros sao independentes)
+GET {{baseUrl}}/api/unidades-hospitalares?search=Hospital&city=São%20Paulo&state=SP&active=true&page=1&pageSize=20
+Authorization: Bearer {{token}}
+
+### Consultar cadastro completo / 404 para Guid inexistente ou fora da organizacao
+GET {{baseUrl}}/api/unidades-hospitalares/{{unitGuid}}
+Authorization: Bearer {{token}}
+
+### Criar manualmente, sem nenhuma dependencia de consulta externa
+POST {{baseUrl}}/api/unidades-hospitalares
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Hospital Central",
+  "hasOwnCnpj": true,
+  "cnpj": "11.222.333/0001-81",
+  "legalName": "Hospital Central Ltda",
+  "unitType": "HospitalGeral",
+  "nature": "Privada",
+  "internalCode": "HC",
+  "postalCode": "01001-000",
+  "street": "Praça da Sé",
+  "number": "10",
+  "district": "Sé",
+  "city": "São Paulo",
+  "state": "SP",
+  "totalBeds": 100,
+  "icuBeds": 20
+}
+
+### Substituir cadastro (campos opcionais omitidos ficam nulos; organizacao/estado nao sao transferidos)
+PUT {{baseUrl}}/api/unidades-hospitalares/{{unitGuid}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Hospital Central Atualizado",
+  "postalCode": "01001000",
+  "street": "Praça da Sé",
+  "number": "10",
+  "district": "Sé",
+  "city": "São Paulo",
+  "state": "SP"
+}
+
+### Inativar preservando vinculos
+PATCH {{baseUrl}}/api/unidades-hospitalares/{{unitGuid}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "active": false }
+
+### Reativar
+PATCH {{baseUrl}}/api/unidades-hospitalares/{{unitGuid}}/status
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "active": true }
+
+### Consulta explicita de CNPJ; mascara com barra enviada na query
+GET {{baseUrl}}/api/unidades-hospitalares/consulta-cnpj?cnpj=11.222.333%2F0001-81
+Authorization: Bearer {{token}}
+
+### Consulta explicita de CEP; numero permanece manual
+GET {{baseUrl}}/api/unidades-hospitalares/consulta-cep?cep=01001-000
+Authorization: Bearer {{token}}
+
+### Erro de validacao 400, sem requisicao ao provedor
+GET {{baseUrl}}/api/unidades-hospitalares/consulta-cnpj?cnpj=11222333000182
+Authorization: Bearer {{token}}
+
+### Alerta de similaridade (nao bloqueia cadastro)
+POST {{baseUrl}}/api/unidades-hospitalares/possiveis-duplicidades
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{ "name": "Hospital Central", "legalName": "Hospital Central Ltda", "postalCode": "01001000", "number": "10", "excludeGuid": null }

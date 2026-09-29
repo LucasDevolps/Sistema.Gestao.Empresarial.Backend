@@ -1,4 +1,5 @@
 using FluentValidation;
+using Sistema.Gestao.Empresarial.Domain.Pessoas;
 
 namespace Sistema.Gestao.Empresarial.Application.Bootstrap;
 
@@ -10,7 +11,8 @@ public sealed class InitialAdminBootstrapRequestValidator : AbstractValidator<In
         RuleFor(x => x.HospitalUnitName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.ProfessionName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.PositionName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.ProfessionalLevelCode).NotEmpty().MaximumLength(10);
+        RuleFor(x => x.ProfessionalLevelCode).NotEmpty().MaximumLength(NivelProfissional.CodigoTamanhoMaximo);
+        RuleFor(x => x.ProfessionalLevelName).NotEmpty().MaximumLength(NivelProfissional.NomeTamanhoMaximo);
         RuleFor(x => x.AdministratorName).NotEmpty().MaximumLength(200);
         RuleFor(x => x.AdministratorEmail).NotEmpty().EmailAddress().MaximumLength(254);
         RuleFor(x => x.AdministratorPhone).MaximumLength(30);

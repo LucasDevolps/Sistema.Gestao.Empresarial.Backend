@@ -21,6 +21,7 @@ try
         RequiredEnvironmentVariable("SGE_BOOTSTRAP_PROFESSION_NAME"),
         RequiredEnvironmentVariable("SGE_BOOTSTRAP_POSITION_NAME"),
         RequiredEnvironmentVariable("SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_CODE"),
+        RequiredEnvironmentVariable("SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_NAME"),
         RequiredEnvironmentVariable("SGE_BOOTSTRAP_ADMINISTRATOR_NAME"),
         RequiredEnvironmentVariable("SGE_BOOTSTRAP_ADMINISTRATOR_EMAIL"),
         Environment.GetEnvironmentVariable("SGE_BOOTSTRAP_ADMINISTRATOR_PHONE"),

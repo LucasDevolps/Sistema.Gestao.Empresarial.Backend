@@ -20,6 +20,11 @@ public sealed partial class AdministratorProfilePermissionUpgradeTests(RealInfra
 {
     private const string MigrationBeforeSectors = "20260909152353_BusinessKeyCaseInsensitiveCollation";
 
+    // Fixado na própria migration de setores: migrations posteriores também concedem
+    // permissões ao administrador (ex.: NiveisProfissionaisConfiguraveis) e mudariam
+    // a contagem exata validada aqui.
+    private const string SectorsMigration = "20260910171319_GestaoSetoresHospitalares";
+
     private static readonly string[] NewSectorPermissionCodes =
     [
         "SETOR_CRIAR",
@@ -61,7 +66,7 @@ public sealed partial class AdministratorProfilePermissionUpgradeTests(RealInfra
         // 3. Aplica a migration de setores (roda o backfill de permissões).
         await using (var db = scratch.CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.GetService<IMigrator>().MigrateAsync(SectorsMigration);
         }
 
         var depois = await ReadAdminPermissionCodesAsync(scratch);
@@ -78,10 +83,10 @@ public sealed partial class AdministratorProfilePermissionUpgradeTests(RealInfra
         Assert.Equal(depois.Count, reexecutado.Count);
         Assert.Equal(reexecutado.Count, reexecutado.Distinct().Count());
 
-        // 5. Reexecutar MigrateAsync() é no-op e mantém o estado.
+        // 5. Reaplicar até a mesma migration é no-op e mantém o estado.
         await using (var db = scratch.CreateContext())
         {
-            await db.Database.MigrateAsync();
+            await db.Database.GetService<IMigrator>().MigrateAsync(SectorsMigration);
         }
 
         var final = await ReadAdminPermissionCodesAsync(scratch);

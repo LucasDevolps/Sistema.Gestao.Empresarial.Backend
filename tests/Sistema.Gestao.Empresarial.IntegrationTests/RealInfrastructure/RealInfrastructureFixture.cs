@@ -40,7 +40,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
 
     public Guid ProfessionGuid { get; private set; }
     public Guid PositionGuid { get; private set; }
-    public Guid LevelGuid { get; } = Guid.Parse("E6E15AE5-FF9B-4A07-884A-5E66F805BFE0");
+    public Guid LevelGuid { get; private set; }
     public Guid HiringUnitGuid { get; private set; }
     public Guid ActingUnitGuid { get; private set; }
     public Guid SectorGuid { get; private set; }
@@ -169,13 +169,16 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
 
         var profession = new Profissao(Guid.NewGuid(), $"Profissão {IsolationKey}", null, now);
         var position = new Cargo(Guid.NewGuid(), $"Cargo {IsolationKey}", null, now);
+        // O catálogo de níveis não é semeado: o fixture cadastra o próprio nível.
+        var level = new NivelProfissional(Guid.NewGuid(), "IT", $"Nível {IsolationKey}", 1, now);
         var categoria = await SetorFactory.SeedCategoriaAsync(db, now, $"Categoria {IsolationKey}");
         var sector = SetorFactory.Basico(actingUnit.Id, categoria.Id, $"Farmácia {IsolationKey}", now, sigla: "FARM");
-        db.AddRange(profession, position, sector);
+        db.AddRange(profession, position, level, sector);
         await db.SaveChangesAsync();
 
         ProfessionGuid = profession.Guid;
         PositionGuid = position.Guid;
+        LevelGuid = level.Guid;
         HiringUnitGuid = hiringUnit.Guid;
         ActingUnitGuid = actingUnit.Guid;
         SectorGuid = sector.Guid;
@@ -183,7 +186,7 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
 
         var actorEmployee = new Funcionario(
             Guid.NewGuid(), "Gestor de integração", $"gestor-{IsolationKey}@hospital.test", null,
-            profession.Id, position.Id, 3, hiringUnit.Id, new DateOnly(2025, 1, 1), now);
+            profession.Id, position.Id, level.Id, hiringUnit.Id, new DateOnly(2025, 1, 1), now);
         db.Funcionarios.Add(actorEmployee);
         await db.SaveChangesAsync();
         var actor = new Usuario(Guid.NewGuid(), actorEmployee.Id, actorEmployee.Email, "HASH_DE_TESTE", now);

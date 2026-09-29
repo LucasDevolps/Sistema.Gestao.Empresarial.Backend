@@ -6,6 +6,7 @@ public sealed record InitialAdminBootstrapRequest(
     string ProfessionName,
     string PositionName,
     string ProfessionalLevelCode,
+    string ProfessionalLevelName,
     string AdministratorName,
     string AdministratorEmail,
     string? AdministratorPhone,

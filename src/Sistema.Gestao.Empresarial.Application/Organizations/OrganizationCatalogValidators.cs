@@ -8,6 +8,12 @@ public sealed class OrganizationCatalogListQueryValidator
     public OrganizationCatalogListQueryValidator()
     {
         RuleFor(x => x.Search).MaximumLength(200);
+        RuleFor(x => x.LegalName).MaximumLength(200);
+        RuleFor(x => x.Cnpj).MaximumLength(18);
+        RuleFor(x => x.Cnes).MaximumLength(7);
+        RuleFor(x => x.City).MaximumLength(100);
+        RuleFor(x => x.State).Must(Sistema.Gestao.Empresarial.Domain.Organizacoes.CadastroBrasileiro.UfValida).When(x => !string.IsNullOrWhiteSpace(x.State));
+        RuleFor(x => x.OrganizationGuid).NotEqual(Guid.Empty).When(x => x.OrganizationGuid.HasValue);
         RuleFor(x => x.Page).InclusiveBetween(1, 1_000_000);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
     }

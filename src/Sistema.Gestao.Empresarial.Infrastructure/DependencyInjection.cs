@@ -100,6 +100,23 @@ public static class DependencyInjection
         services.AddScoped<IProfessionalCatalogService, ProfessionalCatalogService>();
         services.AddScoped<IIdentityQueryService, IdentityQueryService>();
         services.AddScoped<IOrganizationCatalogService, OrganizationCatalogService>();
+        services.AddOptions<HospitalLookupOptions>()
+            .Bind(configuration.GetSection(HospitalLookupOptions.SectionName))
+            .ValidateDataAnnotations().ValidateOnStart();
+        services.AddHttpClient<ICnpjLookupService, BrasilApiCnpjLookupService>((provider, client) =>
+        {
+            var options = provider.GetRequiredService<IOptions<HospitalLookupOptions>>().Value;
+            client.BaseAddress = new Uri(options.BrasilApiBaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            client.MaxResponseContentBufferSize = 512 * 1024;
+        }).RemoveAllLoggers();
+        services.AddHttpClient<ICepLookupService, ViaCepLookupService>((provider, client) =>
+        {
+            var options = provider.GetRequiredService<IOptions<HospitalLookupOptions>>().Value;
+            client.BaseAddress = new Uri(options.ViaCepBaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            client.MaxResponseContentBufferSize = 512 * 1024;
+        }).RemoveAllLoggers();
         services.AddScoped<IInitialAdminBootstrapService, InitialAdminBootstrapService>();
         services.AddScoped<IOutboxStore, OutboxStore>();
         services.AddDbContext<AppDbContext>(options =>

@@ -10,6 +10,7 @@ using Sistema.Gestao.Empresarial.Domain.Integracao;
 using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
+using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
 
 namespace Sistema.Gestao.Empresarial.Infrastructure.Employees;
 
@@ -137,7 +138,7 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             };
             AddAuditAndOutbox("FuncionarioCriado", "CRIADO", employee.Guid, context, null, data, now);
             return employee.Guid;
-        }, cancellationToken);
+        }, cancellationToken, AcquireLevelAssignmentLock(request.LevelGuid));
 
         return await GetRequiredAsync(employeeGuid, organizationId, cancellationToken);
     }
@@ -194,7 +195,7 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             };
             AddAuditAndOutbox("FuncionarioAtualizado", "ATUALIZADO", employee.Guid, context, before, after, now);
             return true;
-        }, cancellationToken);
+        }, cancellationToken, AcquireLevelAssignmentLock(request.LevelGuid));
 
         return found ? await BuildResponseAsync(employeeGuid, organizationId, cancellationToken) : null;
     }
@@ -730,7 +731,17 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             JsonSerializer.Serialize(envelope), context.CorrelationId, context.TraceId, Producer, now));
     }
 
-    private async Task<T> ExecuteMutationAsync<T>(Func<Task<T>> mutation, CancellationToken cancellationToken)
+    /// <summary>
+    /// Serializa o vínculo de um funcionário ao nível contra a exclusão lógica desse
+    /// nível (ver <see cref="ProfessionalLevelUsageLock"/>).
+    /// </summary>
+    private Func<CancellationToken, Task<IAsyncDisposable>> AcquireLevelAssignmentLock(Guid levelGuid) =>
+        ct => ProfessionalLevelUsageLock.AcquireForAssignmentAsync(dbContext, levelGuid, ct);
+
+    private async Task<T> ExecuteMutationAsync<T>(
+        Func<Task<T>> mutation,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<IAsyncDisposable>>? acquireLock = null)
     {
         var strategy = dbContext.Database.CreateExecutionStrategy();
         var attempt = 0;
@@ -744,6 +755,9 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 }
 
                 await using var transaction = await BeginTransactionAsync(cancellationToken);
+                await using var mutationLock = acquireLock is null
+                    ? null
+                    : await acquireLock(cancellationToken);
                 var result = await mutation();
                 await dbContext.SaveChangesAsync(cancellationToken);
                 await CommitAsync(transaction, cancellationToken);

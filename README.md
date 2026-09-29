@@ -152,7 +152,7 @@ deve versionar o arquivo resultante.
 | Portas auxiliares | `SGE_API_PORT`, `SGE_SQLSERVER_PORT`, `SGE_REDIS_PORT`, `SGE_RABBITMQ_MANAGEMENT_PORT`, `SGE_OTLP_GRPC_PORT`, `SGE_OTLP_HTTP_PORT` | compatibilidade/execuções auxiliares; o Compose local atual não as publica |
 | Nginx/TLS | `SGE_NGINX_SERVER_NAME`, `SGE_NGINX_GENERATE_SELF_SIGNED_CERTIFICATE`, `SGE_TLS_CERTIFICATE_PATH`, `SGE_TLS_PRIVATE_KEY_PATH` | host, certificado local ou mounts TLS de produção |
 | Redes | `SGE_DOCKER_NETWORK`, `SGE_API_PROXY_NETWORK`, `SGE_EDGE_NETWORK`, `SGE_API_PROXY_SUBNET`, `SGE_NGINX_INTERNAL_IP`, `SGE_API_INTERNAL_IP` | nomes, subnet e IPs fixos das redes Docker |
-| Bootstrap | `SGE_BOOTSTRAP_PASSWORD_FILE`, `SGE_BOOTSTRAP_ORGANIZATION_NAME`, `SGE_BOOTSTRAP_HOSPITAL_UNIT_NAME`, `SGE_BOOTSTRAP_PROFESSION_NAME`, `SGE_BOOTSTRAP_POSITION_NAME`, `SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_CODE`, `SGE_BOOTSTRAP_ADMINISTRATOR_NAME`, `SGE_BOOTSTRAP_ADMINISTRATOR_EMAIL`, `SGE_BOOTSTRAP_ADMINISTRATOR_PHONE`, `SGE_BOOTSTRAP_ADMISSION_DATE` | dados do primeiro administrador; senha somente por arquivo externo |
+| Bootstrap | `SGE_BOOTSTRAP_PASSWORD_FILE`, `SGE_BOOTSTRAP_ORGANIZATION_NAME`, `SGE_BOOTSTRAP_HOSPITAL_UNIT_NAME`, `SGE_BOOTSTRAP_PROFESSION_NAME`, `SGE_BOOTSTRAP_POSITION_NAME`, `SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_CODE`, `SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_NAME`, `SGE_BOOTSTRAP_ADMINISTRATOR_NAME`, `SGE_BOOTSTRAP_ADMINISTRATOR_EMAIL`, `SGE_BOOTSTRAP_ADMINISTRATOR_PHONE`, `SGE_BOOTSTRAP_ADMISSION_DATE` | dados do primeiro administrador; senha somente por arquivo externo |
 
 Variáveis operacionais que não fazem parte do `.env.example`:
 
@@ -341,7 +341,8 @@ wsl bash ./scripts/bootstrap-initial-admin-docker.sh
 ```
 
 O job usa o login SQL de runtime, monta a senha como arquivo read-only e cria, na
-mesma transação, organização, unidade hospitalar, profissão, cargo, funcionário,
+mesma transação, organização, unidade hospitalar, profissão, cargo, nível
+profissional (código e nome informados), funcionário,
 usuário e o perfil `ADMINISTRADOR_INICIAL` com todas as permissões ativas do
 catálogo. A execução grava `AuditLog` e Outbox sem incluir a senha ou seu hash.
 
@@ -472,9 +473,9 @@ não retornam objetos pertencentes a outra organização.
 
 ## Catálogos profissionais
 
-Profissões e cargos são configuráveis, auditáveis e nunca removidos fisicamente.
-Níveis profissionais permanecem estruturados pelos registros `JR`, `PL` e `SR` e
-possuem consulta própria. Todos os endpoints exigem permissões específicas:
+Profissões, cargos e níveis profissionais são catálogos configuráveis pelo gestor,
+auditáveis e nunca removidos fisicamente. Todos os endpoints exigem permissões
+específicas:
 
 ```text
 GET   /api/profissoes
@@ -489,13 +490,66 @@ POST  /api/cargos
 PUT   /api/cargos/{positionGuid}
 PATCH /api/cargos/{positionGuid}/status
 
-GET   /api/niveis-profissionais
+GET   /api/niveis-profissionais?search=&active=&page=1&pageSize=50
 GET   /api/niveis-profissionais/{levelGuid}
+POST  /api/niveis-profissionais
+PUT   /api/niveis-profissionais/{levelGuid}
+POST  /api/niveis-profissionais/{levelGuid}/excluir
 ```
 
 Atualizações e mudanças de status são idempotentes. Uma profissão ou cargo usado
 por funcionário ativo não pode ser inativado. Toda mudança efetiva grava
 `AuditLog` e `OutboxMessage` na mesma transação SQL.
+
+### Níveis profissionais
+
+Níveis profissionais (por exemplo, Júnior, Pleno, Sênior) são cadastrados pelo
+gestor — **nenhum nível é semeado**. Cada nível tem:
+
+- `code`: identificação curta obrigatória (até 10 caracteres), gravada sem espaços
+  nas extremidades e em maiúsculas;
+- `name`: nome obrigatório (até 80 caracteres), sem espaços nas extremidades;
+- `order`: inteiro de 1 a 9999 que ordena as listagens; pode se repetir, e a
+  listagem desempata pelo nome (`order`, `name`).
+
+Código e nome são únicos entre registros não excluídos, sem diferenciar
+maiúsculas/minúsculas (collation `Latin1_General_CI_AS`, preservando acentos). A
+pré-checagem responde `409` com `code = DUPLICATE_BUSINESS_KEY` e `field`
+`code` ou `name`; sob concorrência, os índices únicos filtrados garantem que só
+uma requisição persista e a violação é traduzida para o mesmo contrato.
+
+A exclusão é **lógica** (`Excluido`, `ExcluidoEm`, `ExcluidoPor`) e, como no
+restante da API, não usa HTTP `DELETE`: `POST .../{levelGuid}/excluir` retorna
+`204`. O nível some das consultas (`GET` passa a responder `404`), permanece no
+banco e libera código e nome para um novo cadastro. Um nível vinculado a qualquer
+funcionário — ativo ou inativo — não pode ser excluído (`422`), pois o histórico
+do funcionário continua exibindo o nível. Um lock lógico por nível
+(`sp_getapplock`) serializa a exclusão com o cadastro/edição de funcionários que o
+selecionam, impedindo que um funcionário termine vinculado a um nível excluído.
+
+Permissões: `NIVEL_PROFISSIONAL_VISUALIZAR` (consultas), `NIVEL_PROFISSIONAL_CRIAR`
+(cadastro) e `NIVEL_PROFISSIONAL_EDITAR` (edição e exclusão lógica, como a
+inativação de profissões e cargos exige `*_EDITAR`). Eventos de Outbox:
+`NivelProfissionalCriado`, `NivelProfissionalAtualizado` e
+`NivelProfissionalExcluido`.
+
+**Compatibilidade com os antigos registros `JR`/`PL`/`SR`.** Até a migration
+`NiveisProfissionaisConfiguraveis` esses três níveis eram inseridos pela migration
+inicial. Ela não foi alterada; a nova migration trata os registros sem nenhuma
+remoção física:
+
+- banco já em uso (existe ao menos um funcionário): os três são preservados como
+  dados comuns do catálogo, editáveis e excluíveis pela aplicação quando não
+  vinculados;
+- instalação nova (nenhum funcionário): os três são excluídos logicamente
+  (`ExcluidoPor` nulo identifica a exclusão feita pela migration) e o catálogo
+  começa vazio — o bootstrap cria o nível do administrador a partir de
+  `SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_CODE` e `SGE_BOOTSTRAP_PROFESSIONAL_LEVEL_NAME`;
+- rollback (`Down`): reativa os níveis que a própria migration excluiu, exceto
+  quando o código ou nome já pertence a outro nível ativo.
+
+A migration aborta sem alterar dados (erro `50001`) se houver níveis ativos que
+passem a colidir sob a nova collation, listando o que sanear.
 
 ## Inbox, retry e DLQ
 

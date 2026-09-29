@@ -36,6 +36,13 @@ public sealed class InitialAdminBootstrapTests
         Assert.Equal(result.GrantedPermissionCount, await fixture.Db.PerfisPermissoes.CountAsync());
         Assert.Single(await fixture.Db.UsuariosPerfis.ToListAsync());
 
+        // O catálogo de níveis começa vazio: o bootstrap cria o nível do administrador.
+        var level = await fixture.Db.NiveisProfissionais.SingleAsync();
+        Assert.Equal("SR", level.Codigo);
+        Assert.Equal("Sênior", level.Nome);
+        Assert.Equal(NivelProfissional.OrdemMinima, level.Ordem);
+        Assert.Equal(level.Id, employee.NivelId);
+
         var audit = await fixture.Db.AuditLogs.SingleAsync();
         var outbox = await fixture.Db.OutboxMessages.SingleAsync();
         Assert.Equal("ADMINISTRADOR_INICIAL_CRIADO", audit.Acao);
@@ -116,6 +123,7 @@ public sealed class InitialAdminBootstrapTests
         "Administração Hospitalar",
         "Administrador do Sistema",
         "SR",
+        "Sênior",
         "Administrador Inicial",
         "admin@hospital.test",
         "+55 11 99999-0000",
@@ -149,8 +157,6 @@ internal sealed class BootstrapFixture : IAsyncDisposable
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
             .Options;
         var db = new AppDbContext(options, clock);
-        db.NiveisProfissionais.Add(new NivelProfissional(
-            Guid.NewGuid(), "SR", "Sênior", 3, clock.GetUtcNow()));
         db.Permissoes.AddRange(PermissionCodes.All.Select(code =>
             new Permissao(Guid.NewGuid(), code, $"Permissão {code}", clock.GetUtcNow())));
         await db.SaveChangesAsync();

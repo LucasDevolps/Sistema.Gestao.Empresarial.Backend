@@ -1,4 +1,5 @@
 using FluentValidation;
+using Sistema.Gestao.Empresarial.Domain.Pessoas;
 
 namespace Sistema.Gestao.Empresarial.Application.ProfessionalCatalogs;
 
@@ -19,6 +20,26 @@ public sealed class CreateProfessionalCatalogRequestValidator
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Description).MaximumLength(500);
+    }
+}
+
+public sealed class CreateProfessionalLevelRequestValidator : AbstractValidator<CreateProfessionalLevelRequest>
+{
+    public CreateProfessionalLevelRequestValidator()
+    {
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(NivelProfissional.CodigoTamanhoMaximo);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(NivelProfissional.NomeTamanhoMaximo);
+        RuleFor(x => x.Order).InclusiveBetween(NivelProfissional.OrdemMinima, NivelProfissional.OrdemMaxima);
+    }
+}
+
+public sealed class UpdateProfessionalLevelRequestValidator : AbstractValidator<UpdateProfessionalLevelRequest>
+{
+    public UpdateProfessionalLevelRequestValidator()
+    {
+        RuleFor(x => x.Code).NotEmpty().MaximumLength(NivelProfissional.CodigoTamanhoMaximo);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(NivelProfissional.NomeTamanhoMaximo);
+        RuleFor(x => x.Order).InclusiveBetween(NivelProfissional.OrdemMinima, NivelProfissional.OrdemMaxima);
     }
 }
 

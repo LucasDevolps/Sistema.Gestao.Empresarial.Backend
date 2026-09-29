@@ -149,7 +149,62 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         builder.ToTable("UnidadesHospitalares");
         ConfigurarBase(builder);
         builder.Property(x => x.Nome).HasMaxLength(200).IsRequired();
-        builder.HasIndex(x => new { x.OrganizacaoId, x.Nome }).IsUnique().HasFilter("[Excluido] = 0");
+        builder.HasIndex(x => new { x.OrganizacaoId, x.Nome });
+        builder.Property(x => x.RazaoSocial).HasMaxLength(200);
+        builder.Property(x => x.Cnpj).HasMaxLength(14);
+        builder.Property(x => x.Cnes).HasMaxLength(7);
+        builder.Property(x => x.CodigoInterno).HasMaxLength(50);
+        builder.Property(x => x.Sigla).HasMaxLength(20);
+        builder.Property(x => x.SituacaoCadastral).HasMaxLength(100);
+        builder.Property(x => x.NaturezaJuridica).HasMaxLength(200);
+        builder.Property(x => x.CnaePrincipal).HasMaxLength(200);
+        builder.Property(x => x.CnaesSecundarios).HasMaxLength(2000);
+        builder.Property(x => x.InscricaoEstadual).HasMaxLength(50);
+        builder.Property(x => x.InscricaoMunicipal).HasMaxLength(50);
+        builder.Property(x => x.Cep).HasMaxLength(8);
+        builder.Property(x => x.Logradouro).HasMaxLength(200);
+        builder.Property(x => x.Numero).HasMaxLength(30);
+        builder.Property(x => x.Complemento).HasMaxLength(150);
+        builder.Property(x => x.Bairro).HasMaxLength(100);
+        builder.Property(x => x.Cidade).HasMaxLength(100);
+        builder.Property(x => x.Uf).HasMaxLength(2);
+        builder.Property(x => x.CodigoIbge).HasMaxLength(7);
+        builder.Property(x => x.Regiao).HasMaxLength(30);
+        builder.Property(x => x.Ddd).HasMaxLength(2);
+        builder.Property(x => x.ReferenciaEndereco).HasMaxLength(300);
+        builder.Property(x => x.TelefonePrincipal).HasMaxLength(30);
+        builder.Property(x => x.TelefoneSecundario).HasMaxLength(30);
+        builder.Property(x => x.Whatsapp).HasMaxLength(30);
+        builder.Property(x => x.EmailInstitucional).HasMaxLength(254);
+        builder.Property(x => x.EmailAdministrativo).HasMaxLength(254);
+        builder.Property(x => x.Site).HasMaxLength(500);
+        builder.Property(x => x.Ramal).HasMaxLength(30);
+        builder.Property(x => x.ResponsavelAdministrativoNome).HasMaxLength(200);
+        builder.Property(x => x.ResponsavelAdministrativoCargo).HasMaxLength(150);
+        builder.Property(x => x.ResponsavelAdministrativoEmail).HasMaxLength(254);
+        builder.Property(x => x.ResponsavelAdministrativoTelefone).HasMaxLength(30);
+        builder.Property(x => x.ResponsavelTecnicoNome).HasMaxLength(200);
+        builder.Property(x => x.ResponsavelTecnicoProfissao).HasMaxLength(150);
+        builder.Property(x => x.ResponsavelTecnicoConselho).HasMaxLength(50);
+        builder.Property(x => x.ResponsavelTecnicoRegistro).HasMaxLength(50);
+        builder.Property(x => x.ResponsavelTecnicoUf).HasMaxLength(2);
+        builder.Property(x => x.ResponsavelTecnicoEmail).HasMaxLength(254);
+        builder.Property(x => x.ResponsavelTecnicoTelefone).HasMaxLength(30);
+        builder.Property(x => x.DiretorClinicoNome).HasMaxLength(200);
+        builder.Property(x => x.DiretorClinicoCrm).HasMaxLength(50);
+        builder.Property(x => x.DiretorClinicoUf).HasMaxLength(2);
+        builder.Property(x => x.DiretorClinicoEmail).HasMaxLength(254);
+        builder.Property(x => x.DiretorClinicoTelefone).HasMaxLength(30);
+        builder.Property(x => x.AlvaraSanitario).HasMaxLength(100);
+        builder.Property(x => x.LicencaFuncionamento).HasMaxLength(100);
+        builder.Property(x => x.ObservacoesRegulatorias).HasMaxLength(2000);
+        builder.Property(x => x.ObservacoesGerais).HasMaxLength(2000);
+        builder.Property(x => x.CodigoInterno).UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.HasIndex(x => x.Cnpj).IsUnique().HasFilter("[Cnpj] IS NOT NULL");
+        builder.HasIndex(x => x.Cnes).IsUnique().HasFilter("[Cnes] IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizacaoId, x.CodigoInterno }).IsUnique().HasFilter("[CodigoInterno] IS NOT NULL");
+        builder.HasIndex(x => new { x.OrganizacaoId, x.Cidade, x.Uf });
+
         builder.HasOne(x => x.Organizacao).WithMany().HasForeignKey(x => x.OrganizacaoId);
     }
 
@@ -255,34 +310,22 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
 
     private static void ConfigurarNivel(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<NivelProfissional> builder)
     {
+        // Catálogo configurável pelo gestor: nenhum nível é semeado pelo modelo. Os
+        // registros JR/PL/SR inseridos por migrations antigas são tratados pela
+        // migration NiveisProfissionaisConfiguraveis (preservados quando em uso).
         builder.ToTable("NiveisProfissionais");
         ConfigurarBase(builder);
-        builder.Property(x => x.Codigo).HasMaxLength(10).IsRequired();
-        builder.Property(x => x.Nome).HasMaxLength(80).IsRequired();
+        builder.Property(x => x.Codigo)
+            .HasMaxLength(NivelProfissional.CodigoTamanhoMaximo)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.Property(x => x.Nome)
+            .HasMaxLength(NivelProfissional.NomeTamanhoMaximo)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
         builder.HasIndex(x => x.Codigo).IsUnique().HasFilter("[Excluido] = 0");
-
-        var seedDate = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
-        builder.HasData(
-            SeedNivel(1, "870D89D7-153A-46EB-93E4-A2E08E966D19", "JR", "Júnior", 1, seedDate),
-            SeedNivel(2, "9D77BFD3-DC47-44E5-A4CA-B62497CD5864", "PL", "Pleno", 2, seedDate),
-            SeedNivel(3, "E6E15AE5-FF9B-4A07-884A-5E66F805BFE0", "SR", "Sênior", 3, seedDate));
+        builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
     }
-
-    private static object SeedNivel(long id, string guid, string codigo, string nome, int ordem, DateTimeOffset date) =>
-        new
-        {
-            Id = id,
-            Guid = Guid.Parse(guid),
-            Codigo = codigo,
-            Nome = nome,
-            Ordem = ordem,
-            Ativo = true,
-            Excluido = false,
-            DataCriacao = date,
-            DataAtualizacao = date,
-            ExcluidoEm = (DateTimeOffset?)null,
-            ExcluidoPor = (Guid?)null
-        };
 
     private static void ConfigurarFuncionario(
         Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Funcionario> builder,
@@ -412,7 +455,12 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             SeedPermissao(14, "3713E2D5-9D19-4BAD-AEFB-C97E1AC03A2E", "SETOR_CRIAR", "Criar setores", seedDate),
             SeedPermissao(15, "819C7EB3-278F-470E-A9B2-D9DBC3C9EE87", "CATEGORIA_SETOR_VISUALIZAR", "Visualizar categorias de setor", seedDate),
             SeedPermissao(16, "72D43BB2-4DA1-4BA5-A32B-DEFCCCCC69D4", "CATEGORIA_SETOR_CRIAR", "Criar categorias de setor", seedDate),
-            SeedPermissao(17, "8E84D66F-A105-4748-86FF-E069A73F0065", "CATEGORIA_SETOR_EDITAR", "Editar categorias de setor", seedDate));
+            SeedPermissao(17, "8E84D66F-A105-4748-86FF-E069A73F0065", "CATEGORIA_SETOR_EDITAR", "Editar categorias de setor", seedDate),
+            SeedPermissao(18, "5C0F2E61-7B3D-4E0A-9F4B-2D8E6A1C9B37", "NIVEL_PROFISSIONAL_CRIAR", "Criar níveis profissionais", seedDate),
+            SeedPermissao(20, "DC8B286A-4053-4083-903D-D3B021204FE4", "UNIDADE_HOSPITALAR_VISUALIZAR", "Visualizar unidades hospitalares", seedDate),
+            SeedPermissao(21, "556FC8DD-4B61-4D42-88A3-DA101FD59AF7", "UNIDADE_HOSPITALAR_CRIAR", "Criar unidades hospitalares", seedDate),
+            SeedPermissao(22, "F72A18C9-5DF5-401F-B5F9-8E39F3F00574", "UNIDADE_HOSPITALAR_EDITAR", "Editar unidades hospitalares", seedDate),
+            SeedPermissao(19, "A7E4B9D2-3C61-4F58-8E0D-6B2F1A9C4E73", "NIVEL_PROFISSIONAL_EDITAR", "Editar e excluir níveis profissionais", seedDate));
     }
 
     private static object SeedPermissao(long id, string guid, string codigo, string descricao, DateTimeOffset date) =>

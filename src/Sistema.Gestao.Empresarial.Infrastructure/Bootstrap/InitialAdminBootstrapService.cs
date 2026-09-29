@@ -109,14 +109,6 @@ public sealed class InitialAdminBootstrapService(
                 $"O catálogo de permissões está incompleto: {string.Join(", ", missingPermissionCodes)}.");
         }
 
-        var normalizedLevelCode = request.ProfessionalLevelCode.Trim().ToUpperInvariant();
-        var level = await dbContext.NiveisProfissionais
-            .SingleOrDefaultAsync(
-                professionalLevel => professionalLevel.Codigo == normalizedLevelCode && professionalLevel.Ativo,
-                cancellationToken)
-            ?? throw new InvalidOperationException(
-                $"O nível profissional '{normalizedLevelCode}' não existe ou está inativo.");
-
         var now = timeProvider.GetUtcNow();
         if (request.AdmissionDate > DateOnly.FromDateTime(now.UtcDateTime))
         {
@@ -131,7 +123,11 @@ public sealed class InitialAdminBootstrapService(
             Guid.NewGuid(), organization.Id, request.HospitalUnitName, now);
         var profession = new Profissao(Guid.NewGuid(), request.ProfessionName, "Criada pelo bootstrap inicial.", now);
         var position = new Cargo(Guid.NewGuid(), request.PositionName, "Criado pelo bootstrap inicial.", now);
-        dbContext.AddRange(hospitalUnit, profession, position);
+        // Níveis profissionais são um catálogo do gestor, sem registros semeados: o
+        // nível do administrador é criado aqui, como profissão e cargo.
+        var level = new NivelProfissional(
+            Guid.NewGuid(), request.ProfessionalLevelCode, request.ProfessionalLevelName, NivelProfissional.OrdemMinima, now);
+        dbContext.AddRange(hospitalUnit, profession, position, level);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var employee = new Funcionario(
