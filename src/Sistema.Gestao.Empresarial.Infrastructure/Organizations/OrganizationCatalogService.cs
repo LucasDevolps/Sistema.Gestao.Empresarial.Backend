@@ -15,7 +15,7 @@ using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 
 namespace Sistema.Gestao.Empresarial.Infrastructure.Organizations;
 
-public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvider timeProvider)
+public sealed partial class OrganizationCatalogService(AppDbContext dbContext, TimeProvider timeProvider)
     : IOrganizationCatalogService
 {
     private const string Producer = "Sistema.Gestao.Empresarial.Api";
@@ -30,60 +30,6 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
             .Select(x => new OrganizationResponse(
                 x.Guid, x.Nome, x.Ativo, x.DataCriacao, x.DataAtualizacao))
             .SingleAsync(cancellationToken);
-    }
-
-    public async Task<HospitalUnitPageResponse> ListHospitalUnitsAsync(
-        Guid actorUserGuid,
-        OrganizationCatalogListQuery query,
-        CancellationToken cancellationToken)
-    {
-        var organizationId = await GetActorOrganizationIdAsync(actorUserGuid, cancellationToken);
-        var units = dbContext.UnidadesHospitalares.AsNoTracking()
-            .Where(x => x.OrganizacaoId == organizationId);
-        var search = query.Search?.Trim();
-        if (!string.IsNullOrWhiteSpace(search))
-        {
-            units = units.Where(x => x.Nome.Contains(search));
-        }
-
-        if (query.Active.HasValue)
-        {
-            units = units.Where(x => x.Ativo == query.Active.Value);
-        }
-
-        var total = await units.CountAsync(cancellationToken);
-        var items = await units
-            .OrderBy(x => x.Nome)
-            .Skip((query.Page - 1) * query.PageSize)
-            .Take(query.PageSize)
-            .Select(x => new HospitalUnitResponse(
-                x.Guid,
-                x.Nome,
-                x.Ativo,
-                new OrganizationReferenceResponse(x.Organizacao.Guid, x.Organizacao.Nome),
-                x.DataCriacao,
-                x.DataAtualizacao))
-            .ToListAsync(cancellationToken);
-
-        return new HospitalUnitPageResponse(items, query.Page, query.PageSize, total);
-    }
-
-    public async Task<HospitalUnitResponse?> GetHospitalUnitAsync(
-        Guid actorUserGuid,
-        Guid unitGuid,
-        CancellationToken cancellationToken)
-    {
-        var organizationId = await GetActorOrganizationIdAsync(actorUserGuid, cancellationToken);
-        return await dbContext.UnidadesHospitalares.AsNoTracking()
-            .Where(x => x.Guid == unitGuid && x.OrganizacaoId == organizationId)
-            .Select(x => new HospitalUnitResponse(
-                x.Guid,
-                x.Nome,
-                x.Ativo,
-                new OrganizationReferenceResponse(x.Organizacao.Guid, x.Organizacao.Nome),
-                x.DataCriacao,
-                x.DataAtualizacao))
-            .SingleOrDefaultAsync(cancellationToken);
     }
 
     public async Task<SectorPageResponse> ListSectorsAsync(
@@ -981,6 +927,9 @@ public sealed class OrganizationCatalogService(AppDbContext dbContext, TimeProvi
     /// </summary>
     private static readonly (string IndexName, string Field, string Message)[] SectorUniqueBusinessKeys =
     [
+        ("IX_UnidadesHospitalares_Cnpj", "cnpj", "Já existe uma unidade com este CNPJ."),
+        ("IX_UnidadesHospitalares_Cnes", "cnes", "Já existe uma unidade com este CNES."),
+        ("IX_UnidadesHospitalares_OrganizacaoId_CodigoInterno", "internalCode", "Já existe uma unidade com este código interno nesta organização."),
         ("IX_Setores_UnidadeHospitalarId_Nome", "name",
             "Já existe um setor com este nome nesta unidade hospitalar."),
         ("IX_Setores_UnidadeHospitalarId_Sigla", "sigla",
