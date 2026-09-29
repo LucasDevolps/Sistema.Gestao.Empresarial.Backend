@@ -331,7 +331,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<Funcionario> builder,
         bool relationalDatabase)
     {
-        builder.ToTable("Funcionarios");
+        builder.ToTable("Funcionarios", table => table.HasCheckConstraint(
+            "CK_Funcionarios_Produtividade", "[Produtividade] IN (0, 1, 2)"));
         ConfigurarBase(builder);
         builder.Property(x => x.Matricula)
             .HasMaxLength(20)
@@ -346,6 +347,8 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         builder.Property(x => x.Email).HasMaxLength(254).IsRequired();
         builder.Property(x => x.Telefone).HasMaxLength(30);
         builder.Property(x => x.DataAdmissao).HasColumnType("date");
+        builder.Property(x => x.Produtividade).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.ParticipaDaEscala).IsRequired().HasDefaultValue(false);
         builder.HasIndex(x => x.Matricula).IsUnique();
         builder.HasIndex(x => x.Email).IsUnique().HasFilter("[Excluido] = 0");
         builder.HasOne(x => x.Profissao).WithMany().HasForeignKey(x => x.ProfissaoId);
