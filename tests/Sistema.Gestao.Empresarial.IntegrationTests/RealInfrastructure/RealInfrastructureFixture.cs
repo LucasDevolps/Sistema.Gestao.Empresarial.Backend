@@ -10,6 +10,7 @@ using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.Organizations;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
+using Sistema.Gestao.Empresarial.Infrastructure.WorkSchedules;
 using Sistema.Gestao.Empresarial.IntegrationTests.TestData;
 using StackExchange.Redis;
 
@@ -99,6 +100,9 @@ public sealed partial class RealInfrastructureFixture : IAsyncLifetime
         new(dbContext, TimeProvider.System);
 
     public ProfessionalCatalogService CreateProfessionalCatalogService(AppDbContext dbContext) =>
+        new(dbContext, TimeProvider.System);
+
+    public WorkScheduleService CreateWorkScheduleService(AppDbContext dbContext) =>
         new(dbContext, TimeProvider.System);
 
     public OrganizationCatalogService CreateOrganizationCatalogService(AppDbContext dbContext) =>
