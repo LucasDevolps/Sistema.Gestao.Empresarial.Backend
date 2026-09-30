@@ -16,6 +16,7 @@ RUN dotnet publish "src/Sistema.Gestao.Empresarial.Api/Sistema.Gestao.Empresaria
 FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1fe86375600b62e6566b465da9553eef0621f13c67f40fe764cd8dbb1dee1497 AS final
 RUN apt-get update \
     && apt-get install --no-install-recommends -y curl \
+    && apt-get install --only-upgrade -y libssl3t64 openssl \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app/publish .
