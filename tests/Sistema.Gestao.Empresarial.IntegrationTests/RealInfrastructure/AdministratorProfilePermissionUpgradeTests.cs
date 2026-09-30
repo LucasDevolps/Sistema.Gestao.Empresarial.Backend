@@ -109,6 +109,50 @@ public sealed partial class AdministratorProfilePermissionUpgradeTests(RealInfra
         Assert.False(await verification.PerfisPermissoes.AnyAsync());
     }
 
+    [RealInfrastructureFact]
+    [Trait("Category", "RealInfrastructure")]
+    public async Task MigrationDeJornadasTrabalho_ConcedePermissoesAoAdministradorExistenteEReverteNoDown()
+    {
+        const string previous = "20260929160504_EmployeeScaleParameters";
+        const string current = "20260930105816_JornadasTrabalho";
+        string[] codes = ["JORNADA_TRABALHO_VISUALIZAR", "JORNADA_TRABALHO_CRIAR", "JORNADA_TRABALHO_EDITAR"];
+        await using var scratch = await ScratchDatabase.CreateAsync(fixture);
+
+        await using (var db = scratch.CreateContext())
+        {
+            await db.Database.GetService<IMigrator>().MigrateAsync(previous);
+            var now = DateTimeOffset.UtcNow;
+            var perfil = new Perfil(Guid.NewGuid(), "ADMINISTRADOR_INICIAL", "Perfil de teste", now);
+            db.Perfis.Add(perfil);
+            await db.SaveChangesAsync();
+            db.PerfisPermissoes.AddRange((await db.Permissoes.AsNoTracking().ToListAsync())
+                .Select(p => new PerfilPermissao(Guid.NewGuid(), perfil.Id, p.Id, now)));
+            await db.SaveChangesAsync();
+        }
+
+        var before = await ReadAdminPermissionCodesAsync(scratch);
+        Assert.All(codes, code => Assert.DoesNotContain(code, before));
+
+        await using (var db = scratch.CreateContext())
+        {
+            await db.Database.GetService<IMigrator>().MigrateAsync(current);
+        }
+
+        var after = await ReadAdminPermissionCodesAsync(scratch);
+        Assert.All(codes, code => Assert.Contains(code, after));
+        Assert.Equal(before.Count + codes.Length, after.Count);
+
+        await ExecuteAsync(scratch, AdministratorProfilePermissionBackfill.GrantWorkSchedulePermissionsSql);
+        Assert.Equal(after.Count, (await ReadAdminPermissionCodesAsync(scratch)).Count);
+
+        await using (var db = scratch.CreateContext())
+        {
+            await db.Database.GetService<IMigrator>().MigrateAsync(previous);
+        }
+
+        Assert.Equal(before, await ReadAdminPermissionCodesAsync(scratch));
+    }
+
     private static async Task<List<string>> ReadAdminPermissionCodesAsync(ScratchDatabase scratch)
     {
         await using var db = scratch.CreateContext();

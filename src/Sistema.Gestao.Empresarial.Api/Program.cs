@@ -36,6 +36,7 @@ builder.Logging.AddStructuredOpenTelemetry(builder.Configuration);
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration, "Sistema.Gestao.Empresarial.Api");
 builder.Services.AddTrustedProxy(builder.Configuration);
+builder.Services.AddFrontendCors(builder.Configuration, builder.Environment);
 builder.Services.AddOptions<KestrelSecurityOptions>()
     .Bind(builder.Configuration.GetRequiredSection(KestrelSecurityOptions.SectionName))
     .ValidateDataAnnotations()
@@ -221,14 +222,17 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHsts();
 }
-if (app.Configuration.GetValue<bool>("Swagger:Enabled"))
+if (app.Environment.IsDevelopment() && app.Configuration.GetValue<bool>("Swagger:Enabled"))
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+app.UseWhen(
+    context => !reverseProxy.UseCloudflareHeaders || !TrustedProxyConfiguration.IsLocalIisRequest(context),
+    branch => branch.UseHttpsRedirection());
 app.UseRouting();
+app.UseCors(FrontendCorsConfiguration.PolicyName);
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
@@ -238,12 +242,12 @@ app.MapControllers();
 app.MapHealthChecks("/health/live", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("live"),
-    ResponseWriter = HealthResponseWriter.WriteAsync
+    ResponseWriter = HealthResponseWriter.WritePublicAsync
 }).AllowAnonymous();
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
     Predicate = check => check.Tags.Contains("ready"),
-    ResponseWriter = HealthResponseWriter.WriteAsync
+    ResponseWriter = HealthResponseWriter.WritePublicAsync
 }).AllowAnonymous();
 app.MapHealthChecks("/health", new HealthCheckOptions
 {

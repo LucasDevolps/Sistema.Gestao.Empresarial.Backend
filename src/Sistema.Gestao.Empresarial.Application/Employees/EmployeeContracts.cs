@@ -10,7 +10,9 @@ public sealed record CreateEmployeeRequest(
     Guid HiringUnitGuid,
     DateOnly AdmissionDate,
     IReadOnlyCollection<CreateEmployeeActingUnitRequest>? ActingUnits,
-    IReadOnlyCollection<CreateEmployeeSectorRequest>? Sectors);
+    IReadOnlyCollection<CreateEmployeeSectorRequest>? Sectors,
+    int Productivity = 0,
+    bool ParticipatesInSchedule = false);
 
 public sealed record CreateEmployeeActingUnitRequest(Guid UnitGuid, DateOnly StartDate);
 public sealed record CreateEmployeeSectorRequest(Guid SectorGuid, DateOnly StartDate);
@@ -21,7 +23,9 @@ public sealed record UpdateEmployeeRequest(
     string? Phone,
     Guid ProfessionGuid,
     Guid PositionGuid,
-    Guid LevelGuid);
+    Guid LevelGuid,
+    int? Productivity = null,
+    bool? ParticipatesInSchedule = null);
 
 public sealed record ChangeEmployeeStatusRequest(bool Active);
 public sealed record AddEmployeeActingUnitRequest(Guid UnitGuid, DateOnly StartDate);
@@ -33,7 +37,8 @@ public sealed record EmployeeListQuery(
     bool? Active,
     Guid? ActingUnitGuid,
     int Page = 1,
-    int PageSize = 50);
+    int PageSize = 50,
+    bool? ParticipatesInSchedule = null);
 
 public sealed record EmployeePageResponse(
     IReadOnlyCollection<EmployeeSummaryResponse> Items,
@@ -50,7 +55,9 @@ public sealed record EmployeeSummaryResponse(
     EmployeeReferenceResponse Profession,
     EmployeeReferenceResponse Position,
     EmployeeLevelResponse Level,
-    EmployeeReferenceResponse HiringUnit);
+    EmployeeReferenceResponse HiringUnit,
+    int Productivity,
+    bool ParticipatesInSchedule);
 
 public sealed record EmployeeResponse(
     Guid Guid,
@@ -67,7 +74,9 @@ public sealed record EmployeeResponse(
     IReadOnlyCollection<EmployeeActingUnitResponse> ActingUnits,
     IReadOnlyCollection<EmployeeSectorResponse> Sectors,
     DateTimeOffset CreatedAt,
-    DateTimeOffset UpdatedAt);
+    DateTimeOffset UpdatedAt,
+    int Productivity,
+    bool ParticipatesInSchedule);
 
 public sealed record EmployeeReferenceResponse(Guid Guid, string Name);
 public sealed record EmployeeLevelResponse(Guid Guid, string Code, string Name);

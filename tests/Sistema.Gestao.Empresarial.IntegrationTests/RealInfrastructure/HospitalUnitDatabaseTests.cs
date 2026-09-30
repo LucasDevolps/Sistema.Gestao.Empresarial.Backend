@@ -77,7 +77,8 @@ public sealed class HospitalUnitDatabaseTests(RealInfrastructureFixture fixture)
             var granted = await db.PerfisPermissoes.CountAsync(x => x.Permissao.Codigo.StartsWith("UNIDADE_HOSPITALAR_"));
             Assert.Equal(3, granted);
             await db.Database.ExecuteSqlRawAsync(AdministratorProfilePermissionBackfill.GrantHospitalUnitPermissionsSql);
-            Assert.Equal(3, await db.PerfisPermissoes.CountAsync());
+            // Migrations posteriores também concedem permissões ao administrador: conta só as de unidades.
+            Assert.Equal(3, await db.PerfisPermissoes.CountAsync(x => x.Permissao.Codigo.StartsWith("UNIDADE_HOSPITALAR_")));
             Assert.False(db.Database.HasPendingModelChanges());
             Assert.Empty(await db.Database.GetPendingMigrationsAsync());
             var sameName = new UnidadeHospitalar(Guid.NewGuid(), legacy.OrganizacaoId, "Hospital legado", DateTimeOffset.UtcNow);

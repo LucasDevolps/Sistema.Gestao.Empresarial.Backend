@@ -4,6 +4,38 @@ namespace Sistema.Gestao.Empresarial.UnitTests.Domain;
 
 public sealed class FuncionarioTests
 {
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(99)]
+    public void InvalidProductivity_RejectsCreationAndUpdateWithoutMutation(int productivity)
+    {
+        var now = DateTimeOffset.UtcNow;
+        Assert.Throws<Sistema.Gestao.Empresarial.Domain.Common.DomainException>(() => new Funcionario(
+            Guid.NewGuid(), "Maria", "maria@test.com", null, 1, 2, 3, 4, new DateOnly(2026, 1, 1), now, productivity));
+        var employee = new Funcionario(Guid.NewGuid(), "Maria", "maria@test.com", null,
+            1, 2, 3, 4, new DateOnly(2026, 1, 1), now, 2, true);
+        Assert.Throws<Sistema.Gestao.Empresarial.Domain.Common.DomainException>(() => employee.AtualizarDados(
+            "Changed", "changed@test.com", null, 1, 2, 3, now.AddMinutes(1), productivity, false));
+        Assert.Equal("Maria", employee.Nome);
+        Assert.Equal(2, employee.Produtividade);
+        Assert.True(employee.ParticipaDaEscala);
+        Assert.Equal(now, employee.DataAtualizacao);
+    }
+
+    [Fact]
+    public void ScaleParameters_UpdateTimestampAndRemainIdempotent()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var employee = new Funcionario(Guid.NewGuid(), "Maria", "maria@test.com", null,
+            1, 2, 3, 4, new DateOnly(2026, 1, 1), now);
+        Assert.True(employee.AtualizarDados("Maria", "maria@test.com", null, 1, 2, 3, now.AddMinutes(1), 1, true));
+        Assert.Equal(now.AddMinutes(1), employee.DataAtualizacao);
+        Assert.False(employee.AtualizarDados("Maria", "maria@test.com", null, 1, 2, 3, now.AddMinutes(2), 1, true));
+        Assert.Equal(now.AddMinutes(1), employee.DataAtualizacao);
+    }
+
     [Fact]
     public void AtualizarDados_DevePreservarOrigemContratualEDataDeAdmissao()
     {

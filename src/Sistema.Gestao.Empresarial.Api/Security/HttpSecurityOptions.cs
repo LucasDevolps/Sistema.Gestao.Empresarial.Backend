@@ -8,6 +8,8 @@ public sealed class ReverseProxyOptions
 
     public bool Enabled { get; init; }
 
+    public bool UseCloudflareHeaders { get; init; }
+
     [Range(1, 5)]
     public int ForwardLimit { get; init; } = 1;
 

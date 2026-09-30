@@ -19,7 +19,9 @@ public sealed class Funcionario : EntidadeAuditavel
         long nivelId,
         long unidadeContratacaoId,
         DateOnly dataAdmissao,
-        DateTimeOffset criadoEm)
+        DateTimeOffset criadoEm,
+        int produtividade = 0,
+        bool participaDaEscala = false)
         : base(guid, criadoEm)
     {
         Nome = Guard.TextoObrigatorio(nome, nameof(Nome), 200);
@@ -30,8 +32,12 @@ public sealed class Funcionario : EntidadeAuditavel
         NivelId = ValidarId(nivelId, "O nível profissional");
         UnidadeContratacaoId = ValidarId(unidadeContratacaoId, "A unidade de contratação");
         DataAdmissao = dataAdmissao;
+        Produtividade = ValidarProdutividade(produtividade);
+        ParticipaDaEscala = participaDaEscala;
     }
 
+    public int Produtividade { get; private set; }
+    public bool ParticipaDaEscala { get; private set; }
     public string Matricula { get; private set; } = null!;
     public string Nome { get; private set; } = string.Empty;
     public string Email { get; private set; } = string.Empty;
@@ -53,7 +59,9 @@ public sealed class Funcionario : EntidadeAuditavel
         long profissaoId,
         long cargoId,
         long nivelId,
-        DateTimeOffset atualizadoEm)
+        DateTimeOffset atualizadoEm,
+        int? produtividade = null,
+        bool? participaDaEscala = null)
     {
         var novoNome = Guard.TextoObrigatorio(nome, nameof(Nome), 200);
         var novoEmail = Guard.TextoObrigatorio(email, nameof(Email), 254).ToLowerInvariant();
@@ -62,12 +70,17 @@ public sealed class Funcionario : EntidadeAuditavel
         cargoId = ValidarId(cargoId, "O cargo");
         nivelId = ValidarId(nivelId, "O nível profissional");
 
+        var novaProdutividade = ValidarProdutividade(produtividade ?? Produtividade);
+        var novaParticipacao = participaDaEscala ?? ParticipaDaEscala;
+
         if (Nome == novoNome
             && Email == novoEmail
             && Telefone == novoTelefone
             && ProfissaoId == profissaoId
             && CargoId == cargoId
-            && NivelId == nivelId)
+            && NivelId == nivelId
+            && Produtividade == novaProdutividade
+            && ParticipaDaEscala == novaParticipacao)
         {
             return false;
         }
@@ -78,8 +91,20 @@ public sealed class Funcionario : EntidadeAuditavel
         ProfissaoId = profissaoId;
         CargoId = cargoId;
         NivelId = nivelId;
+        Produtividade = novaProdutividade;
+        ParticipaDaEscala = novaParticipacao;
         MarcarAtualizacao(atualizadoEm);
         return true;
+    }
+
+    private static int ValidarProdutividade(int produtividade)
+    {
+        if (produtividade is < 0 or > 2)
+        {
+            throw new DomainException("Produtividade deve ser 0, 1 ou 2.");
+        }
+
+        return produtividade;
     }
 
     private static long ValidarId(long id, string nome)

@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# Overlay de integração local com o IIS do Windows.
+#
+# NÃO faz parte do ambiente de desenvolvimento. Só tem efeito quando é passado
+# explicitamente com -f:
+#
+#   docker compose \
+#     -f docker-compose.yml \
+#     -f docker-compose.override.yml \
+#     -f docker-compose.iis.yml \
+#     up -d sqlserver redis rabbitmq otel-collector
+#
+# O `scripts/publish-local-iis.ps1` faz exatamente isso.
+#
+# Objetivo: publicar as portas de SQL Server, Redis, RabbitMQ (AMQP) e do
+# OpenTelemetry Collector SOMENTE em 127.0.0.1 (loopback do WSL), para que a
+# aplicação hospedada no IIS/Windows consiga alcançá-las via localhost.
+#
+# Regras preservadas:
+#   * A rede `default` continua `internal: true` (containers sem rota para a LAN).
+#     Uma bridge adicional NÃO interna (`iis-access`) é anexada apenas aos
+#     serviços que precisam de NAT de porta — mesmo padrão já usado pelo
+#     `aspire-dashboard` + `dashboard-access` no override.
+#   * Todo bind é 127.0.0.1:<porta>. NUNCA 0.0.0.0. Nada fica exposto na LAN.
+#   * As portas externas são diferentes das portas internas e das portas já
+#     usadas pela aplicação/infra em desenvolvimento.
+#   * Nenhuma credencial, virtual host, ACL ou volume é alterado. É o MESMO
+#     SQL Server / Redis / RabbitMQ / Collector usado no desenvolvimento.
+#
+# Portas padrão (todas configuráveis por variável de ambiente / .env):
+#   SQL Server      127.0.0.1:11433 -> container:1433
+#   Redis           127.0.0.1:16379 -> container:6379
+#   RabbitMQ AMQP   127.0.0.1:15673 -> container:5672
+#   OTLP gRPC       127.0.0.1:14317 -> container:4317
+#   OTLP HTTP       127.0.0.1:14318 -> container:4318
+#
+# A UI de gerenciamento do RabbitMQ (15672) e o SA do SQL NÃO são publicados.
+# ---------------------------------------------------------------------------
+
+services:
+  sqlserver:
+    networks:
+      - default
+      - iis-access
+    ports:
+      - "127.0.0.1:${SGE_IIS_SQLSERVER_PORT:-11433}:1433"
+
+  redis:
+    networks:
+      - default
+      - iis-access
+    ports:
+      - "127.0.0.1:${SGE_IIS_REDIS_PORT:-16379}:6379"
+
+  rabbitmq:
+    networks:
+      - default
+      - iis-access
+    ports:
+      - "127.0.0.1:${SGE_IIS_RABBITMQ_PORT:-15673}:5672"
+
+  otel-collector:
+    networks:
+      - default
+      - iis-access
+    ports:
+      - "127.0.0.1:${SGE_IIS_OTLP_GRPC_PORT:-14317}:4317"
+      - "127.0.0.1:${SGE_IIS_OTLP_HTTP_PORT:-14318}:4318"
+
+networks:
+  # Bridge NÃO interna, usada apenas para o NAT das portas em loopback acima.
+  # Os dados continuam trafegando pela rede `default` (internal).
+  iis-access:
+    name: ${SGE_IIS_ACCESS_NETWORK:-sge-iis-access}
+    driver: bridge

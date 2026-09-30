@@ -57,9 +57,19 @@ public sealed partial class ProfessionalLevelMigrationTests(RealInfrastructureFi
             var profile = new Perfil(Guid.NewGuid(), "ADMINISTRADOR_INICIAL", "Perfil de teste", now);
             db.AddRange(profession, position, profile);
             await db.SaveChangesAsync();
-            db.Funcionarios.Add(new Funcionario(
-                Guid.NewGuid(), "Administrador", "admin-legado@hospital.test", null,
-                profession.Id, position.Id, LegacySeniorId, unitId, new DateOnly(2025, 1, 1), now));
+            // O modelo atual possui colunas posteriores a este schema historico.
+            // Assim como a unidade acima, o funcionario deve usar somente as colunas da epoca.
+            var employeeGuid = Guid.NewGuid();
+            var admissionDate = new DateOnly(2025, 1, 1);
+            await db.Database.ExecuteSqlInterpolatedAsync($"""
+                INSERT INTO sge.Funcionarios
+                    (Guid, Nome, Email, ProfissaoId, CargoId, NivelId, UnidadeContratacaoId,
+                     DataAdmissao, Ativo, Excluido, DataCriacao, DataAtualizacao)
+                VALUES
+                    ({employeeGuid}, N'Administrador', N'admin-legado@hospital.test',
+                     {profession.Id}, {position.Id}, {LegacySeniorId}, {unitId},
+                     {admissionDate}, 1, 0, {now}, {now});
+                """);
             var permissions = await db.Permissoes.AsNoTracking().ToListAsync();
             permissionsBefore = permissions.Count;
             db.PerfisPermissoes.AddRange(permissions.Select(p =>

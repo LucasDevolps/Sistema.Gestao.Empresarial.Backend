@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using Sistema.Gestao.Empresarial.Infrastructure.Persistence;
 namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260929160504_EmployeeScaleParameters")]
+    partial class EmployeeScaleParameters
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -239,82 +242,6 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                     b.HasIndex("Entidade", "EntidadeGuid");
 
                     b.ToTable("AuditLogs", "sge");
-                });
-
-            modelBuilder.Entity("Sistema.Gestao.Empresarial.Domain.Escalas.JornadaTrabalho", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
-
-                    b.Property<bool>("Ativo")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTimeOffset>("DataAtualizacao")
-                        .HasPrecision(0)
-                        .HasColumnType("datetimeoffset(0)");
-
-                    b.Property<DateTimeOffset>("DataCriacao")
-                        .HasPrecision(0)
-                        .HasColumnType("datetimeoffset(0)");
-
-                    b.Property<string>("Descricao")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
-
-                    b.Property<int>("DiasConsecutivosTrabalho")
-                        .HasColumnType("int");
-
-                    b.Property<int>("DiasDescansoCiclo")
-                        .HasColumnType("int");
-
-                    b.Property<bool>("Excluido")
-                        .HasColumnType("bit");
-
-                    b.Property<DateTimeOffset?>("ExcluidoEm")
-                        .HasPrecision(0)
-                        .HasColumnType("datetimeoffset(0)");
-
-                    b.Property<Guid?>("ExcluidoPor")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<Guid>("Guid")
-                        .HasColumnType("uniqueidentifier");
-
-                    b.Property<int>("MaximoDiasConsecutivos")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Nome")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("nvarchar(100)")
-                        .UseCollation("Latin1_General_CI_AS");
-
-                    b.Property<byte[]>("Versao")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Guid")
-                        .IsUnique();
-
-                    b.HasIndex("Nome")
-                        .IsUnique()
-                        .HasFilter("[Excluido] = 0");
-
-                    b.ToTable("JornadasTrabalho", "sge", t =>
-                        {
-                            t.HasCheckConstraint("CK_JornadasTrabalho_DiasConsecutivosTrabalho", "[DiasConsecutivosTrabalho] > 0");
-
-                            t.HasCheckConstraint("CK_JornadasTrabalho_DiasDescansoCiclo", "[DiasDescansoCiclo] > 0");
-
-                            t.HasCheckConstraint("CK_JornadasTrabalho_MaximoDiasConsecutivos", "[MaximoDiasConsecutivos] BETWEEN 1 AND 6");
-                        });
                 });
 
             modelBuilder.Entity("Sistema.Gestao.Empresarial.Domain.Integracao.InboxMessage", b =>
@@ -2175,39 +2102,6 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
                             Descricao = "Editar unidades hospitalares",
                             Excluido = false,
                             Guid = new Guid("f72a18c9-5df5-401f-b5f9-8e39f3f00574")
-                        },
-                        new
-                        {
-                            Id = 23L,
-                            Ativo = true,
-                            Codigo = "JORNADA_TRABALHO_VISUALIZAR",
-                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            Descricao = "Visualizar jornadas de trabalho",
-                            Excluido = false,
-                            Guid = new Guid("b3c1d5e7-2a4f-4c68-9e1b-7d0a5f3c8e24")
-                        },
-                        new
-                        {
-                            Id = 24L,
-                            Ativo = true,
-                            Codigo = "JORNADA_TRABALHO_CRIAR",
-                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            Descricao = "Criar jornadas de trabalho",
-                            Excluido = false,
-                            Guid = new Guid("c4d2e6f8-3b5a-4d79-8f2c-8e1b6a4d9f35")
-                        },
-                        new
-                        {
-                            Id = 25L,
-                            Ativo = true,
-                            Codigo = "JORNADA_TRABALHO_EDITAR",
-                            DataAtualizacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            DataCriacao = new DateTimeOffset(new DateTime(2026, 1, 1, 0, 0, 0, 0, DateTimeKind.Unspecified), new TimeSpan(0, 0, 0, 0, 0)),
-                            Descricao = "Editar, inativar e reativar jornadas de trabalho",
-                            Excluido = false,
-                            Guid = new Guid("d5e3f7a9-4c6b-4e8a-9a3d-9f2c7b5eaa46")
                         },
                         new
                         {

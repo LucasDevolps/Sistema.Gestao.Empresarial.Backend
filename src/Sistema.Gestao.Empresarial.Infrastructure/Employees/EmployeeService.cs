@@ -38,6 +38,11 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             employees = employees.Where(x => x.Ativo == query.Active.Value);
         }
 
+        if (query.ParticipatesInSchedule.HasValue)
+        {
+            employees = employees.Where(x => x.ParticipaDaEscala == query.ParticipatesInSchedule.Value);
+        }
+
         if (query.ActingUnitGuid.HasValue)
         {
             var unitGuid = query.ActingUnitGuid.Value;
@@ -62,7 +67,8 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 new EmployeeReferenceResponse(x.Profissao.Guid, x.Profissao.Nome),
                 new EmployeeReferenceResponse(x.Cargo.Guid, x.Cargo.Nome),
                 new EmployeeLevelResponse(x.Nivel.Guid, x.Nivel.Codigo, x.Nivel.Nome),
-                new EmployeeReferenceResponse(x.UnidadeContratacao.Guid, x.UnidadeContratacao.Nome)))
+                new EmployeeReferenceResponse(x.UnidadeContratacao.Guid, x.UnidadeContratacao.Nome),
+                x.Produtividade, x.ParticipaDaEscala))
             .ToListAsync(cancellationToken);
 
         return new EmployeePageResponse(items, query.Page, query.PageSize, total);
@@ -111,7 +117,7 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             var employee = new Funcionario(
                 Guid.NewGuid(), request.Name, request.Email, request.Phone,
                 references.ProfessionId, references.PositionId, references.LevelId,
-                hiringUnit.Id, request.AdmissionDate, now);
+                hiringUnit.Id, request.AdmissionDate, now, request.Productivity, request.ParticipatesInSchedule);
             dbContext.Funcionarios.Add(employee);
 
             // O primeiro flush obtém Id e matrícula da SEQUENCE; tudo permanece na mesma transação.
@@ -134,7 +140,9 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 registrationNumber = employee.Matricula,
                 hiringUnitGuid = hiringUnit.Guid,
                 actingUnitGuids = actingUnits.Select(x => x.Guid),
-                sectorGuids = sectors.Select(x => x.Guid)
+                sectorGuids = sectors.Select(x => x.Guid),
+                productivity = employee.Produtividade,
+                participatesInSchedule = employee.ParticipaDaEscala
             };
             AddAuditAndOutbox("FuncionarioCriado", "CRIADO", employee.Guid, context, null, data, now);
             return employee.Guid;
@@ -174,12 +182,15 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 employee.Telefone,
                 professionGuid = employee.Profissao.Guid,
                 positionGuid = employee.Cargo.Guid,
-                levelGuid = employee.Nivel.Guid
+                levelGuid = employee.Nivel.Guid,
+                productivity = employee.Produtividade,
+                participatesInSchedule = employee.ParticipaDaEscala
             };
             var now = timeProvider.GetUtcNow();
             if (!employee.AtualizarDados(
                     request.Name, request.Email, request.Phone,
-                    references.ProfessionId, references.PositionId, references.LevelId, now))
+                    references.ProfessionId, references.PositionId, references.LevelId, now,
+                    request.Productivity, request.ParticipatesInSchedule))
             {
                 return true;
             }
@@ -191,7 +202,9 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 employee.Telefone,
                 request.ProfessionGuid,
                 request.PositionGuid,
-                request.LevelGuid
+                request.LevelGuid,
+                productivity = employee.Produtividade,
+                participatesInSchedule = employee.ParticipaDaEscala
             };
             AddAuditAndOutbox("FuncionarioAtualizado", "ATUALIZADO", employee.Guid, context, before, after, now);
             return true;
@@ -479,6 +492,8 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
                 x.Email,
                 x.Telefone,
                 x.DataAdmissao,
+                x.Produtividade,
+                x.ParticipaDaEscala,
                 x.Ativo,
                 Profession = new EmployeeReferenceResponse(x.Profissao.Guid, x.Profissao.Nome),
                 Position = new EmployeeReferenceResponse(x.Cargo.Guid, x.Cargo.Nome),
@@ -515,7 +530,8 @@ public sealed class EmployeeService(AppDbContext dbContext, TimeProvider timePro
             employee.Guid, employee.Matricula, employee.Nome, employee.Email, employee.Telefone,
             employee.DataAdmissao, employee.Ativo, employee.Profession, employee.Position,
             employee.Level, employee.HiringUnit, actingUnits, sectors,
-            employee.DataCriacao, employee.DataAtualizacao);
+            employee.DataCriacao, employee.DataAtualizacao,
+            employee.Produtividade, employee.ParticipaDaEscala);
     }
 
     private async Task<EmployeeResponse> GetRequiredAsync(

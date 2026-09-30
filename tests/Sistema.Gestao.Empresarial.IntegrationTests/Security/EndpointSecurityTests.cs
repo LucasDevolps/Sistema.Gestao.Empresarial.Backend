@@ -159,6 +159,26 @@ public sealed class EndpointSecurityTests : IClassFixture<SecureApiFactory>
         AssertPolicy(endpoints, route, httpMethod, RequirePermissionAttribute.PolicyPrefix + permission);
     }
 
+    [Theory]
+    [InlineData("api/jornadas-trabalho", "GET", PermissionCodes.ViewWorkSchedules)]
+    [InlineData("api/jornadas-trabalho/{workScheduleGuid:guid}", "GET", PermissionCodes.ViewWorkSchedules)]
+    [InlineData("api/jornadas-trabalho", "POST", PermissionCodes.CreateWorkSchedules)]
+    [InlineData("api/jornadas-trabalho/{workScheduleGuid:guid}", "PUT", PermissionCodes.EditWorkSchedules)]
+    [InlineData("api/jornadas-trabalho/{workScheduleGuid:guid}/status", "PATCH", PermissionCodes.EditWorkSchedules)]
+    public void EndpointsDeJornadasDeTrabalho_DevemExigirAPermissaoEspecifica(
+        string route,
+        string httpMethod,
+        string permission)
+    {
+        _factory.CreateClient();
+        var endpoints = _factory.Services.GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .ToArray();
+
+        AssertPolicy(endpoints, route, httpMethod, RequirePermissionAttribute.PolicyPrefix + permission);
+    }
+
     [Fact]
     public void Api_NaoDeveExporEndpointsHttpDelete()
     {

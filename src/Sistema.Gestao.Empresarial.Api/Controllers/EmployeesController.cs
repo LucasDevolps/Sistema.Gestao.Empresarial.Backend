@@ -29,9 +29,10 @@ public sealed class EmployeesController(
         [FromQuery] Guid? actingUnitGuid,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
+        [FromQuery] bool? participatesInSchedule = null,
         CancellationToken cancellationToken = default)
     {
-        var query = new EmployeeListQuery(search, active, actingUnitGuid, page, pageSize);
+        var query = new EmployeeListQuery(search, active, actingUnitGuid, page, pageSize, participatesInSchedule);
         var validation = await listValidator.ValidateAsync(query, cancellationToken);
         if (!validation.IsValid)
         {

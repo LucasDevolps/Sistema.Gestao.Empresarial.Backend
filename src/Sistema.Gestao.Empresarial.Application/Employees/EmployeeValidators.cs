@@ -22,6 +22,7 @@ public sealed class CreateEmployeeRequestValidator : AbstractValidator<CreateEmp
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Email).NotEmpty().MaximumLength(254).EmailAddress();
         RuleFor(x => x.Phone).MaximumLength(30);
+        RuleFor(x => x.Productivity).InclusiveBetween(0, 2);
         RuleFor(x => x.ProfessionGuid).NotEmpty();
         RuleFor(x => x.PositionGuid).NotEmpty();
         RuleFor(x => x.LevelGuid).NotEmpty();
@@ -75,6 +76,7 @@ public sealed class UpdateEmployeeRequestValidator : AbstractValidator<UpdateEmp
         RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
         RuleFor(x => x.Email).NotEmpty().MaximumLength(254).EmailAddress();
         RuleFor(x => x.Phone).MaximumLength(30);
+        RuleFor(x => x.Productivity).InclusiveBetween(0, 2);
         RuleFor(x => x.ProfessionGuid).NotEmpty();
         RuleFor(x => x.PositionGuid).NotEmpty();
         RuleFor(x => x.LevelGuid).NotEmpty();
