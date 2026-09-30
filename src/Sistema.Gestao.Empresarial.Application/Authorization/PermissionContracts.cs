@@ -8,7 +8,7 @@ public static class PermissionCodes
     public const string ViewWorkSchedules = "JORNADA_TRABALHO_VISUALIZAR";
     public const string CreateWorkSchedules = "JORNADA_TRABALHO_CRIAR";
     public const string EditWorkSchedules = "JORNADA_TRABALHO_EDITAR";
-    public const string ViewEmployees ="FUNCIONARIO_VISUALIZAR";
+    public const string ViewEmployees = "FUNCIONARIO_VISUALIZAR";
     public const string CreateEmployees = "FUNCIONARIO_CRIAR";
     public const string EditEmployees = "FUNCIONARIO_EDITAR";
     public const string ViewProfessions = "PROFISSAO_VISUALIZAR";
