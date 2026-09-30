@@ -20,6 +20,8 @@ using Sistema.Gestao.Empresarial.Application.Employees;
 using Sistema.Gestao.Empresarial.Application.ProfessionalCatalogs;
 using Sistema.Gestao.Empresarial.Infrastructure.Employees;
 using Sistema.Gestao.Empresarial.Infrastructure.ProfessionalCatalogs;
+using Sistema.Gestao.Empresarial.Application.WorkSchedules;
+using Sistema.Gestao.Empresarial.Infrastructure.WorkSchedules;
 using Sistema.Gestao.Empresarial.Application.Bootstrap;
 using Sistema.Gestao.Empresarial.Infrastructure.Bootstrap;
 using Sistema.Gestao.Empresarial.Application.Identity;
@@ -98,6 +100,7 @@ public static class DependencyInjection
         services.AddScoped<IPermissionAdministrationService, PermissionAdministrationService>();
         services.AddScoped<IEmployeeService, EmployeeService>();
         services.AddScoped<IProfessionalCatalogService, ProfessionalCatalogService>();
+        services.AddScoped<IWorkScheduleService, WorkScheduleService>();
         services.AddScoped<IIdentityQueryService, IdentityQueryService>();
         services.AddScoped<IOrganizationCatalogService, OrganizationCatalogService>();
         services.AddOptions<HospitalLookupOptions>()

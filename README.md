@@ -551,6 +551,51 @@ remoção física:
 A migration aborta sem alterar dados (erro `50001`) se houver níveis ativos que
 passem a colidir sob a nova collation, listando o que sanear.
 
+### Jornadas de trabalho
+
+Tipos de jornada (6x1, 5x2, 12x36...) usados futuramente pelo módulo de escalas.
+Nenhuma jornada é semeada e o comportamento nunca depende do nome — só dos
+parâmetros —, então novas jornadas são cadastradas sem alterar código.
+
+```text
+GET   /api/jornadas-trabalho?search=&active=&page=1&pageSize=50
+GET   /api/jornadas-trabalho/{workScheduleGuid}
+POST  /api/jornadas-trabalho
+PUT   /api/jornadas-trabalho/{workScheduleGuid}
+PATCH /api/jornadas-trabalho/{workScheduleGuid}/status   { "active": false }
+```
+
+Contrato (`guid`, `name`, `consecutiveWorkDays`, `restDays`,
+`maximumConsecutiveWorkDays`, `description`, `active`, `createdAt`, `updatedAt`):
+
+| Campo | Regra |
+| --- | --- |
+| `name` | obrigatório, até 100 caracteres, sem espaços nas extremidades |
+| `consecutiveWorkDays` | obrigatório, `> 0` |
+| `restDays` | obrigatório, `> 0` |
+| `maximumConsecutiveWorkDays` | obrigatório, de 1 a 6 — ninguém trabalha 7 ou mais dias seguidos |
+| `description` | opcional, até 500 caracteres |
+
+Exemplos: 6x1 → `6 / 1 / 6`; 5x2 → `5 / 2 / 5`. A regra 1..6 vive no domínio
+(`JornadaTrabalho`), no validador e em `CHECK` no banco (tabela `sge.JornadasTrabalho`).
+Não se exige `maximumConsecutiveWorkDays <= consecutiveWorkDays`: a issue não pede.
+
+- **Nome único** entre registros não excluídos, sem diferenciar maiúsculas/minúsculas
+  nem espaços das extremidades (índice único filtrado `IX_JornadasTrabalho_Nome`,
+  collation `Latin1_General_CI_AS`); duplicidade responde `409` com
+  `code = DUPLICATE_BUSINESS_KEY` e `field = name`, também sob concorrência.
+- **Sem exclusão.** Não há `DELETE` nem endpoint de exclusão: a jornada é
+  inativada/reativada por `PATCH .../status` (idempotente), continua consultável
+  (`active=false` lista só inativas; sem `active`, todas) e preserva o histórico. O
+  vínculo futuro com funcionários deve recusar jornadas inativas.
+- **Catálogo global**, como cargos, níveis e profissões (nenhum deles tem
+  `OrganizacaoId`), portanto não há isolamento por organização.
+- **Permissões:** `JORNADA_TRABALHO_VISUALIZAR`, `JORNADA_TRABALHO_CRIAR` e
+  `JORNADA_TRABALHO_EDITAR` (edição, inativação e reativação). A migration
+  `JornadasTrabalho` as concede ao `ADMINISTRADOR_INICIAL` já existente.
+- **Auditoria/Outbox** na mesma transação: `JornadaTrabalhoCriada`,
+  `JornadaTrabalhoAtualizada`, `JornadaTrabalhoInativada` e `JornadaTrabalhoReativada`.
+
 ## Inbox, retry e DLQ
 
 O consumer `IntegrationEventConsumer` usa a chave única `(MessageId, Consumer)` e

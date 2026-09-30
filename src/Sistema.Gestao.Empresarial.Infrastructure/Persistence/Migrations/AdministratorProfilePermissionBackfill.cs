@@ -141,4 +141,24 @@ JOIN [sge].[Permissoes] pm ON pm.[Id] = existing.[PermissaoId]
 WHERE pm.[Codigo] IN (N'UNIDADE_HOSPITALAR_VISUALIZAR', N'UNIDADE_HOSPITALAR_CRIAR', N'UNIDADE_HOSPITALAR_EDITAR');
 ";
 
+    /// <summary>Permissões da issue #51 (jornadas de trabalho) para instalações já provisionadas.</summary>
+    public const string GrantWorkSchedulePermissionsSql = @"
+INSERT INTO [sge].[PerfisPermissoes]
+    ([Guid], [PerfilId], [PermissaoId], [Ativo], [Excluido], [DataCriacao], [DataAtualizacao])
+SELECT NEWID(), pf.[Id], pm.[Id], 1, 0, '2026-09-30T00:00:00+00:00', '2026-09-30T00:00:00+00:00'
+FROM [sge].[Perfis] pf CROSS JOIN [sge].[Permissoes] pm
+WHERE pf.[Nome] = N'ADMINISTRADOR_INICIAL' AND pf.[Excluido] = 0 AND pm.[Excluido] = 0
+  AND pm.[Codigo] IN (N'JORNADA_TRABALHO_VISUALIZAR', N'JORNADA_TRABALHO_CRIAR', N'JORNADA_TRABALHO_EDITAR')
+  AND NOT EXISTS (SELECT 1 FROM [sge].[PerfisPermissoes] existing
+      WHERE existing.[PerfilId] = pf.[Id] AND existing.[PermissaoId] = pm.[Id] AND existing.[Excluido] = 0);
+";
+
+    public const string RevokeWorkSchedulePermissionsSql = @"
+DELETE existing FROM [sge].[PerfisPermissoes] existing
+JOIN [sge].[Permissoes] pm ON pm.[Id] = existing.[PermissaoId]
+WHERE pm.[Codigo] IN (N'JORNADA_TRABALHO_VISUALIZAR', N'JORNADA_TRABALHO_CRIAR', N'JORNADA_TRABALHO_EDITAR');
+DELETE existing FROM [sge].[UsuariosPermissoes] existing
+JOIN [sge].[Permissoes] pm ON pm.[Id] = existing.[PermissaoId]
+WHERE pm.[Codigo] IN (N'JORNADA_TRABALHO_VISUALIZAR', N'JORNADA_TRABALHO_CRIAR', N'JORNADA_TRABALHO_EDITAR');
+";
 }

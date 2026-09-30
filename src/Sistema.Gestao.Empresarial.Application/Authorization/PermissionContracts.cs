@@ -5,7 +5,10 @@ public static class PermissionCodes
     public const string ViewHospitalUnits = "UNIDADE_HOSPITALAR_VISUALIZAR";
     public const string CreateHospitalUnits = "UNIDADE_HOSPITALAR_CRIAR";
     public const string EditHospitalUnits = "UNIDADE_HOSPITALAR_EDITAR";
-    public const string ViewEmployees = "FUNCIONARIO_VISUALIZAR";
+    public const string ViewWorkSchedules = "JORNADA_TRABALHO_VISUALIZAR";
+    public const string CreateWorkSchedules = "JORNADA_TRABALHO_CRIAR";
+    public const string EditWorkSchedules = "JORNADA_TRABALHO_EDITAR";
+    public const string ViewEmployees ="FUNCIONARIO_VISUALIZAR";
     public const string CreateEmployees = "FUNCIONARIO_CRIAR";
     public const string EditEmployees = "FUNCIONARIO_EDITAR";
     public const string ViewProfessions = "PROFISSAO_VISUALIZAR";
@@ -30,6 +33,9 @@ public static class PermissionCodes
         ViewHospitalUnits,
         CreateHospitalUnits,
         EditHospitalUnits,
+        ViewWorkSchedules,
+        CreateWorkSchedules,
+        EditWorkSchedules,
         ViewEmployees,
         CreateEmployees,
         EditEmployees,

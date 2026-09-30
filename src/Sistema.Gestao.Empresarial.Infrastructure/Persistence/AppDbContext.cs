@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using Sistema.Gestao.Empresarial.Domain.Common;
 using Sistema.Gestao.Empresarial.Domain.Auditoria;
+using Sistema.Gestao.Empresarial.Domain.Escalas;
 using Sistema.Gestao.Empresarial.Domain.Integracao;
 using Sistema.Gestao.Empresarial.Domain.Organizacoes;
 using Sistema.Gestao.Empresarial.Domain.Pessoas;
@@ -27,6 +28,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
     public DbSet<SetorUnidadeAtendida> SetoresUnidadesAtendidas => Set<SetorUnidadeAtendida>();
     public DbSet<Profissao> Profissoes => Set<Profissao>();
     public DbSet<Cargo> Cargos => Set<Cargo>();
+    public DbSet<JornadaTrabalho> JornadasTrabalho => Set<JornadaTrabalho>();
     public DbSet<NivelProfissional> NiveisProfissionais => Set<NivelProfissional>();
     public DbSet<Funcionario> Funcionarios => Set<Funcionario>();
     public DbSet<FuncionarioUnidadeAtuacao> FuncionariosUnidadesAtuacao => Set<FuncionarioUnidadeAtuacao>();
@@ -59,6 +61,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         ConfigurarProfissao(modelBuilder.Entity<Profissao>());
         ConfigurarCargo(modelBuilder.Entity<Cargo>());
         ConfigurarNivel(modelBuilder.Entity<NivelProfissional>());
+        ConfigurarJornadaTrabalho(modelBuilder.Entity<JornadaTrabalho>());
         ConfigurarFuncionario(modelBuilder.Entity<Funcionario>(), Database.IsRelational());
         ConfigurarAtuacao(modelBuilder.Entity<FuncionarioUnidadeAtuacao>());
         ConfigurarFuncionarioSetor(modelBuilder.Entity<FuncionarioSetor>());
@@ -308,6 +311,27 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
         builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
     }
 
+    private static void ConfigurarJornadaTrabalho(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<JornadaTrabalho> builder)
+    {
+        // Catálogo configurável: nenhuma jornada (6x1, 5x2...) é semeada. Sem FKs de
+        // saída nem cascade: futuros vínculos referenciarão a jornada com Restrict.
+        builder.ToTable("JornadasTrabalho", table =>
+        {
+            table.HasCheckConstraint("CK_JornadasTrabalho_DiasConsecutivosTrabalho", "[DiasConsecutivosTrabalho] > 0");
+            table.HasCheckConstraint("CK_JornadasTrabalho_DiasDescansoCiclo", "[DiasDescansoCiclo] > 0");
+            table.HasCheckConstraint(
+                "CK_JornadasTrabalho_MaximoDiasConsecutivos",
+                "[MaximoDiasConsecutivos] BETWEEN 1 AND 6");
+        });
+        ConfigurarBase(builder);
+        builder.Property(x => x.Nome)
+            .HasMaxLength(JornadaTrabalho.NomeTamanhoMaximo)
+            .IsRequired()
+            .UseCollation(CaseInsensitiveAccentSensitiveCollation);
+        builder.Property(x => x.Descricao).HasMaxLength(JornadaTrabalho.DescricaoTamanhoMaximo);
+        builder.HasIndex(x => x.Nome).IsUnique().HasFilter("[Excluido] = 0");
+    }
+
     private static void ConfigurarNivel(Microsoft.EntityFrameworkCore.Metadata.Builders.EntityTypeBuilder<NivelProfissional> builder)
     {
         // Catálogo configurável pelo gestor: nenhum nível é semeado pelo modelo. Os
@@ -463,6 +487,9 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             SeedPermissao(20, "DC8B286A-4053-4083-903D-D3B021204FE4", "UNIDADE_HOSPITALAR_VISUALIZAR", "Visualizar unidades hospitalares", seedDate),
             SeedPermissao(21, "556FC8DD-4B61-4D42-88A3-DA101FD59AF7", "UNIDADE_HOSPITALAR_CRIAR", "Criar unidades hospitalares", seedDate),
             SeedPermissao(22, "F72A18C9-5DF5-401F-B5F9-8E39F3F00574", "UNIDADE_HOSPITALAR_EDITAR", "Editar unidades hospitalares", seedDate),
+            SeedPermissao(23, "B3C1D5E7-2A4F-4C68-9E1B-7D0A5F3C8E24", "JORNADA_TRABALHO_VISUALIZAR", "Visualizar jornadas de trabalho", seedDate),
+            SeedPermissao(24, "C4D2E6F8-3B5A-4D79-8F2C-8E1B6A4D9F35", "JORNADA_TRABALHO_CRIAR", "Criar jornadas de trabalho", seedDate),
+            SeedPermissao(25, "D5E3F7A9-4C6B-4E8A-9A3D-9F2C7B5EAA46", "JORNADA_TRABALHO_EDITAR", "Editar, inativar e reativar jornadas de trabalho", seedDate),
             SeedPermissao(19, "A7E4B9D2-3C61-4F58-8E0D-6B2F1A9C4E73", "NIVEL_PROFISSIONAL_EDITAR", "Editar e excluir níveis profissionais", seedDate));
     }
 
