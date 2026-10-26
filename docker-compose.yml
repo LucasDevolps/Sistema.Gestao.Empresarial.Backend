@@ -207,7 +207,7 @@ services:
     cpus: 1.0
 
   rabbitmq:
-    image: rabbitmq:4.3.5-management-alpine@sha256:5b6a50b2f1dbd987bb1a6a9e20b152910c3dc8ae32e1c9060b543ecd9250f6b9
+    image: rabbitmq:4.4.0-management-alpine@sha256:0452ee3fd3b9a74160b251e693338616b464f22df4d4ba43304c101bebdca292
     environment:
       RABBITMQ_DEFAULT_USER: ${SGE_RABBITMQ_USERNAME:?Defina SGE_RABBITMQ_USERNAME}
       RABBITMQ_DEFAULT_PASS: ${SGE_RABBITMQ_PASSWORD:?Defina SGE_RABBITMQ_PASSWORD}
