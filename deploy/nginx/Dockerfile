@@ -1,4 +1,4 @@
-FROM nginx:1.30.4-alpine@sha256:02b1b2a0445514891a14aa371845f6085d5d9d10d385b30d6aad606a50a29a05
+FROM nginx:1.31.8-alpine@sha256:785835ea65db4bba6f021acc0f3be91b0fef76a53fe41f8588c6698d2aed0606
 
 # Require patched util-linux and expat libraries even when the base image is pinned.
 RUN apk add --no-cache openssl su-exec 'libuuid>=2.42.3-r1' 'libexpat>=2.8.5-r0' \
