@@ -112,6 +112,9 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
     [InlineData(6, 1, -1, "MaximumConsecutiveWorkDays")]
     [InlineData(6, 1, 7, "MaximumConsecutiveWorkDays")]
     [InlineData(6, 1, 8, "MaximumConsecutiveWorkDays")]
+    [InlineData(7, 1, 6, "ConsecutiveWorkDays")]
+    [InlineData(10, 2, 6, "ConsecutiveWorkDays")]
+    [InlineData(6, 1, 5, "ConsecutiveWorkDays")]
     public async Task CadastrarEEditar_ParametrosInvalidos_Retornam400ComErroNoCampo(
         int work, int rest, int max, string field)
     {

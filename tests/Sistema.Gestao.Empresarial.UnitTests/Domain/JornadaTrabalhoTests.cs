@@ -106,7 +106,29 @@ public sealed class JornadaTrabalhoTests
     [InlineData(6)]
     public void Criar_MaximoConsecutivoNosLimites_DeveSerPermitido(int maximo)
     {
-        Assert.Equal(maximo, Nova(maximo: maximo).MaximoDiasConsecutivos);
+        Assert.Equal(maximo, Nova(trabalho: 1, maximo: maximo).MaximoDiasConsecutivos);
+    }
+
+    [Theory]
+    [InlineData(7, 1, 6)]
+    [InlineData(10, 2, 6)]
+    [InlineData(6, 1, 5)]
+    [InlineData(2, 1, 1)]
+    public void Criar_CicloMaiorQueOMaximo_DeveSerRejeitado(int trabalho, int descanso, int maximo)
+    {
+        Assert.Throws<DomainException>(() => Nova(trabalho: trabalho, descanso: descanso, maximo: maximo));
+    }
+
+    [Theory]
+    [InlineData(5, 2, 6)]
+    [InlineData(4, 2, 4)]
+    [InlineData(1, 1, 6)]
+    public void Criar_CicloMenorOuIgualAoMaximo_DeveSerPermitido(int trabalho, int descanso, int maximo)
+    {
+        var jornada = Nova(trabalho: trabalho, descanso: descanso, maximo: maximo);
+
+        Assert.Equal(trabalho, jornada.DiasConsecutivosTrabalho);
+        Assert.Equal(maximo, jornada.MaximoDiasConsecutivos);
     }
 
     [Fact]
@@ -148,6 +170,8 @@ public sealed class JornadaTrabalhoTests
     [InlineData(6, 0, 6)]
     [InlineData(6, 1, 7)]
     [InlineData(6, 1, 0)]
+    [InlineData(7, 1, 6)]
+    [InlineData(6, 1, 5)]
     public void Atualizar_ValoresInvalidos_DevemSerRejeitadosSemAlterarEstado(int trabalho, int descanso, int maximo)
     {
         var jornada = Nova();

@@ -29,6 +29,10 @@ public sealed class WorkScheduleValidatorsTests
     [InlineData("6x1", 6, 1, -1, "MaximumConsecutiveWorkDays")]
     [InlineData("6x1", 6, 1, 7, "MaximumConsecutiveWorkDays")]
     [InlineData("6x1", 6, 1, 8, "MaximumConsecutiveWorkDays")]
+    [InlineData("7x1", 7, 1, 6, "ConsecutiveWorkDays")]
+    [InlineData("7x1", 7, 1, 7, "ConsecutiveWorkDays")]
+    [InlineData("10x2", 10, 2, 6, "ConsecutiveWorkDays")]
+    [InlineData("6x1", 6, 1, 5, "ConsecutiveWorkDays")]
     public void RequisicaoInvalida_DeveApontarOCampo(string name, int work, int rest, int max, string field)
     {
         var create = _create.Validate(new CreateWorkScheduleRequest(name, work, rest, max, null));
@@ -36,6 +40,30 @@ public sealed class WorkScheduleValidatorsTests
 
         Assert.Contains(create.Errors, error => error.PropertyName == field);
         Assert.Contains(update.Errors, error => error.PropertyName == field);
+    }
+
+    [Fact]
+    public void CicloMaiorQueOMaximo_DeveTerMensagemEspecificaUnica()
+    {
+        var create = _create.Validate(new CreateWorkScheduleRequest("6x1", 6, 1, 5, null));
+        var update = _update.Validate(new UpdateWorkScheduleRequest("6x1", 6, 1, 5, null));
+
+        foreach (var result in new[] { create, update })
+        {
+            var error = Assert.Single(result.Errors);
+            Assert.Equal("ConsecutiveWorkDays", error.PropertyName);
+            Assert.Equal(WorkScheduleRules.CycleExceedsMaximumMessage, error.ErrorMessage);
+        }
+    }
+
+    [Fact]
+    public void CicloDeSeteDias_DeveGerarApenasOErroDeFaixa()
+    {
+        var result = _create.Validate(new CreateWorkScheduleRequest("7x1", 7, 1, 6, null));
+
+        var error = Assert.Single(result.Errors);
+        Assert.Equal("ConsecutiveWorkDays", error.PropertyName);
+        Assert.NotEqual(WorkScheduleRules.CycleExceedsMaximumMessage, error.ErrorMessage);
     }
 
     [Fact]

@@ -322,6 +322,10 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, TimePro
             table.HasCheckConstraint(
                 "CK_JornadasTrabalho_MaximoDiasConsecutivos",
                 "[MaximoDiasConsecutivos] BETWEEN 1 AND 6");
+            // O ciclo não pode exceder o máximo: impede 7x1 (ou 10x2 com máximo 6).
+            table.HasCheckConstraint(
+                "CK_JornadasTrabalho_CicloDentroDoMaximo",
+                "[DiasConsecutivosTrabalho] <= [MaximoDiasConsecutivos]");
         });
         ConfigurarBase(builder);
         builder.Property(x => x.Nome)
