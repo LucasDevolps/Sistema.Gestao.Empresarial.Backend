@@ -105,11 +105,6 @@ public sealed class JornadaTrabalho : EntidadeAuditavel
         return maximo;
     }
 
-    /// <summary>
-    /// O próprio ciclo não pode exceder o máximo configurado: uma jornada 7x1 (ou
-    /// 10x2 com máximo 6) obrigaria o funcionário a trabalhar além do limite, mesmo
-    /// com <see cref="MaximoDiasConsecutivos"/> válido.
-    /// </summary>
     private static void ValidarCicloDentroDoMaximo(int diasTrabalho, int maximo)
     {
         if (diasTrabalho > maximo)

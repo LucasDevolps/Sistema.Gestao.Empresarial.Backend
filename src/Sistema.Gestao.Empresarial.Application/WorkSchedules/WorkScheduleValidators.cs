@@ -18,10 +18,7 @@ public static class WorkScheduleRules
     public const string CycleExceedsMaximumMessage =
         "Os dias consecutivos de trabalho não podem ser maiores que o máximo de dias consecutivos permitido.";
 
-    /// <summary>
-    /// Só compara ciclo e máximo quando ambos já estão na faixa válida; caso
-    /// contrário, a regra de faixa do próprio campo já reporta o erro.
-    /// </summary>
+    // Evita erro duplicado: fora da faixa, a regra do próprio campo já reporta.
     public static bool BothInRange(int consecutiveWorkDays, int maximumConsecutiveWorkDays) =>
         consecutiveWorkDays is >= 1 and <= JornadaTrabalho.MaximoDiasConsecutivosPermitido
         && maximumConsecutiveWorkDays is >= 1 and <= JornadaTrabalho.MaximoDiasConsecutivosPermitido;
