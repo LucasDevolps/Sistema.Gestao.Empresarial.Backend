@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\Shared\Builders\*.cs" Link="Builders\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Sistema.Gestao.Empresarial.Api\Sistema.Gestao.Empresarial.Api.csproj" />
     <ProjectReference Include="..\..\src\Sistema.Gestao.Empresarial.Infrastructure\Sistema.Gestao.Empresarial.Infrastructure.csproj" />
   </ItemGroup>

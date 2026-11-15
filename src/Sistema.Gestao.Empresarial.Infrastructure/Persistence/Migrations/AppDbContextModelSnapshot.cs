@@ -309,6 +309,8 @@ namespace Sistema.Gestao.Empresarial.Infrastructure.Persistence.Migrations
 
                     b.ToTable("JornadasTrabalho", "sge", t =>
                         {
+                            t.HasCheckConstraint("CK_JornadasTrabalho_CicloDentroDoMaximo", "[DiasConsecutivosTrabalho] <= [MaximoDiasConsecutivos]");
+
                             t.HasCheckConstraint("CK_JornadasTrabalho_DiasConsecutivosTrabalho", "[DiasConsecutivosTrabalho] > 0");
 
                             t.HasCheckConstraint("CK_JornadasTrabalho_DiasDescansoCiclo", "[DiasDescansoCiclo] > 0");

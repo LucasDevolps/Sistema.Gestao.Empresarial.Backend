@@ -35,7 +35,7 @@ public sealed class WorkScheduleDatabaseTests(RealInfrastructureFixture fixture)
         Assert.True(await reader.ReadAsync());
         Assert.Equal(1, reader.GetInt32(0));
         Assert.Equal(1, reader.GetInt32(1));
-        Assert.Equal(3, reader.GetInt32(2));
+        Assert.Equal(4, reader.GetInt32(2));
         Assert.Equal(1, reader.GetInt32(3));
         Assert.Equal(0, reader.GetInt32(4));
         // Nenhuma jornada (6x1/5x2) é semeada pela migration.
@@ -47,7 +47,8 @@ public sealed class WorkScheduleDatabaseTests(RealInfrastructureFixture fixture)
     [Trait("Category", "RealInfrastructure")]
     public async Task BancoDeveRejeitarParametrosInvalidosMesmoSemPassarPeloDominio()
     {
-        (int Work, int RestDays, int Max)[] invalid = [(0, 1, 6), (6, 0, 6), (6, 1, 0), (6, 1, 7), (-1, 1, 6)];
+        (int Work, int RestDays, int Max)[] invalid =
+            [(0, 1, 6), (6, 0, 6), (6, 1, 0), (6, 1, 7), (-1, 1, 6), (7, 1, 6), (6, 1, 5)];
         foreach (var (work, rest, max) in invalid)
         {
             await using var db = fixture.CreateDbContext();

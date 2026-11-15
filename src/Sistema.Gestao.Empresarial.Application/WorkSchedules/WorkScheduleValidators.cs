@@ -13,12 +13,28 @@ public sealed class WorkScheduleListQueryValidator : AbstractValidator<WorkSched
     }
 }
 
+public static class WorkScheduleRules
+{
+    public const string CycleExceedsMaximumMessage =
+        "Os dias consecutivos de trabalho não podem ser maiores que o máximo de dias consecutivos permitido.";
+
+    // Evita erro duplicado: fora da faixa, a regra do próprio campo já reporta.
+    public static bool BothInRange(int consecutiveWorkDays, int maximumConsecutiveWorkDays) =>
+        consecutiveWorkDays is >= 1 and <= JornadaTrabalho.MaximoDiasConsecutivosPermitido
+        && maximumConsecutiveWorkDays is >= 1 and <= JornadaTrabalho.MaximoDiasConsecutivosPermitido;
+}
+
 public sealed class CreateWorkScheduleRequestValidator : AbstractValidator<CreateWorkScheduleRequest>
 {
     public CreateWorkScheduleRequestValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(JornadaTrabalho.NomeTamanhoMaximo);
-        RuleFor(x => x.ConsecutiveWorkDays).GreaterThan(0);
+        RuleFor(x => x.ConsecutiveWorkDays)
+            .InclusiveBetween(1, JornadaTrabalho.MaximoDiasConsecutivosPermitido);
+        RuleFor(x => x.ConsecutiveWorkDays)
+            .LessThanOrEqualTo(x => x.MaximumConsecutiveWorkDays)
+            .When(x => WorkScheduleRules.BothInRange(x.ConsecutiveWorkDays, x.MaximumConsecutiveWorkDays))
+            .WithMessage(WorkScheduleRules.CycleExceedsMaximumMessage);
         RuleFor(x => x.RestDays).GreaterThan(0);
         RuleFor(x => x.MaximumConsecutiveWorkDays)
             .InclusiveBetween(1, JornadaTrabalho.MaximoDiasConsecutivosPermitido);
@@ -31,7 +47,12 @@ public sealed class UpdateWorkScheduleRequestValidator : AbstractValidator<Updat
     public UpdateWorkScheduleRequestValidator()
     {
         RuleFor(x => x.Name).NotEmpty().MaximumLength(JornadaTrabalho.NomeTamanhoMaximo);
-        RuleFor(x => x.ConsecutiveWorkDays).GreaterThan(0);
+        RuleFor(x => x.ConsecutiveWorkDays)
+            .InclusiveBetween(1, JornadaTrabalho.MaximoDiasConsecutivosPermitido);
+        RuleFor(x => x.ConsecutiveWorkDays)
+            .LessThanOrEqualTo(x => x.MaximumConsecutiveWorkDays)
+            .When(x => WorkScheduleRules.BothInRange(x.ConsecutiveWorkDays, x.MaximumConsecutiveWorkDays))
+            .WithMessage(WorkScheduleRules.CycleExceedsMaximumMessage);
         RuleFor(x => x.RestDays).GreaterThan(0);
         RuleFor(x => x.MaximumConsecutiveWorkDays)
             .InclusiveBetween(1, JornadaTrabalho.MaximoDiasConsecutivosPermitido);

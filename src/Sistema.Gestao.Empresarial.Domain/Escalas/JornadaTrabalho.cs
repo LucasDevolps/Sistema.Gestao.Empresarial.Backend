@@ -37,6 +37,7 @@ public sealed class JornadaTrabalho : EntidadeAuditavel
         DiasConsecutivosTrabalho = ValidarDiasPositivos(diasConsecutivosTrabalho, nameof(DiasConsecutivosTrabalho));
         DiasDescansoCiclo = ValidarDiasPositivos(diasDescansoCiclo, nameof(DiasDescansoCiclo));
         MaximoDiasConsecutivos = ValidarMaximoConsecutivo(maximoDiasConsecutivos);
+        ValidarCicloDentroDoMaximo(DiasConsecutivosTrabalho, MaximoDiasConsecutivos);
         Descricao = Guard.TextoOpcional(descricao, nameof(Descricao), DescricaoTamanhoMaximo);
     }
 
@@ -63,6 +64,7 @@ public sealed class JornadaTrabalho : EntidadeAuditavel
         var novosDiasTrabalho = ValidarDiasPositivos(diasConsecutivosTrabalho, nameof(DiasConsecutivosTrabalho));
         var novosDiasDescanso = ValidarDiasPositivos(diasDescansoCiclo, nameof(DiasDescansoCiclo));
         var novoMaximo = ValidarMaximoConsecutivo(maximoDiasConsecutivos);
+        ValidarCicloDentroDoMaximo(novosDiasTrabalho, novoMaximo);
         var novaDescricao = Guard.TextoOpcional(descricao, nameof(Descricao), DescricaoTamanhoMaximo);
         if (Nome == novoNome
             && DiasConsecutivosTrabalho == novosDiasTrabalho
@@ -101,5 +103,14 @@ public sealed class JornadaTrabalho : EntidadeAuditavel
         }
 
         return maximo;
+    }
+
+    private static void ValidarCicloDentroDoMaximo(int diasTrabalho, int maximo)
+    {
+        if (diasTrabalho > maximo)
+        {
+            throw new DomainException(
+                $"{nameof(DiasConsecutivosTrabalho)} não pode ser maior que {nameof(MaximoDiasConsecutivos)}.");
+        }
     }
 }

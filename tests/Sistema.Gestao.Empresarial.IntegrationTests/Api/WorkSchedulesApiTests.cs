@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Sistema.Gestao.Empresarial.Application.Authorization;
+using Sistema.Gestao.Empresarial.Tests.Builders;
 
 namespace Sistema.Gestao.Empresarial.IntegrationTests.Api;
 
@@ -26,8 +27,8 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
 
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync(Route)).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync($"{Route}/{guid}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync(Route, Payload("X"))).StatusCode);
-        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync($"{Route}/{guid}", Payload("X"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PostAsJsonAsync(Route, Request("X").BuildCreate())).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await client.PutAsJsonAsync($"{Route}/{guid}", Request("X").BuildUpdate())).StatusCode);
         Assert.Equal(HttpStatusCode.Unauthorized,
             (await client.PatchAsJsonAsync($"{Route}/{guid}/status", new { active = false })).StatusCode);
     }
@@ -40,8 +41,8 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
 
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync(Route)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"{Route}/{guid}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(Route, Payload("X"))).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await client.PutAsJsonAsync($"{Route}/{guid}", Payload("X"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PostAsJsonAsync(Route, Request("X").BuildCreate())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.PutAsJsonAsync($"{Route}/{guid}", Request("X").BuildUpdate())).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await client.PatchAsJsonAsync($"{Route}/{guid}/status", new { active = false })).StatusCode);
     }
@@ -54,8 +55,8 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
         using var reader = _factory.CreateApiClient(_factory.GrantPermissions(PermissionCodes.ViewWorkSchedules));
 
         Assert.Equal(HttpStatusCode.OK, (await reader.GetAsync($"{Route}/{schedule}")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await reader.PostAsJsonAsync(Route, Payload("X " + Suffix()))).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await reader.PutAsJsonAsync($"{Route}/{schedule}", Payload("Y"))).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.PostAsJsonAsync(Route, Request("X " + Suffix()).BuildCreate())).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await reader.PutAsJsonAsync($"{Route}/{schedule}", Request("Y").BuildUpdate())).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden,
             (await reader.PatchAsJsonAsync($"{Route}/{schedule}/status", new { active = false })).StatusCode);
     }
@@ -78,7 +79,7 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
         using var client = AdminClient();
         var name = "6x1 " + Suffix();
 
-        var response = await client.PostAsJsonAsync(Route, Payload($"  {name} ", 6, 1, 6, "Assistencial"));
+        var response = await client.PostAsJsonAsync(Route, Request($"  {name} ").WithDescription("Assistencial").BuildCreate());
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var body = await response.Content.ReadFromJsonAsync<JsonElement>();
@@ -98,35 +99,35 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
     {
         using var client = AdminClient();
 
-        var response = await client.PostAsJsonAsync(Route, Payload("5x2 " + Suffix(), 5, 2, 5));
+        var response = await client.PostAsJsonAsync(Route, Request("5x2 " + Suffix()).WithCycle(5, 2).WithMaximum(5).BuildCreate());
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
-    [Theory]
-    [InlineData(0, 1, 6, "ConsecutiveWorkDays")]
-    [InlineData(-1, 1, 6, "ConsecutiveWorkDays")]
-    [InlineData(6, 0, 6, "RestDays")]
-    [InlineData(6, -1, 6, "RestDays")]
-    [InlineData(6, 1, 0, "MaximumConsecutiveWorkDays")]
-    [InlineData(6, 1, -1, "MaximumConsecutiveWorkDays")]
-    [InlineData(6, 1, 7, "MaximumConsecutiveWorkDays")]
-    [InlineData(6, 1, 8, "MaximumConsecutiveWorkDays")]
-    public async Task CadastrarEEditar_ParametrosInvalidos_Retornam400ComErroNoCampo(
-        int work, int rest, int max, string field)
+    [Fact]
+    public async Task CadastrarEEditar_7x1_Retornam400NoCampoConsecutiveWorkDays()
     {
-        using var client = AdminClient();
-        var guid = await CreateAsync(client, "Base " + Suffix());
+        await AssertBadRequestAsync(
+            Request("7x1 " + Suffix()).WithCycle(7, 1).WithMaximum(6), "ConsecutiveWorkDays");
+    }
 
-        var create = await client.PostAsJsonAsync(Route, Payload("Inv " + Suffix(), work, rest, max));
-        var update = await client.PutAsJsonAsync($"{Route}/{guid}", Payload("Inv " + Suffix(), work, rest, max));
+    [Fact]
+    public async Task CadastrarEEditar_CicloMaiorQueOMaximo_Retornam400NoCampoConsecutiveWorkDays()
+    {
+        await AssertBadRequestAsync(
+            Request("Inv " + Suffix()).WithCycle(6, 1).WithMaximum(5), "ConsecutiveWorkDays");
+    }
 
-        foreach (var response in new[] { create, update })
-        {
-            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            var errors = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors");
-            Assert.True(errors.TryGetProperty(field, out _));
-        }
+    [Fact]
+    public async Task CadastrarEEditar_MaximoSete_Retornam400NoCampoMaximumConsecutiveWorkDays()
+    {
+        await AssertBadRequestAsync(Request("Inv " + Suffix()).WithMaximum(7), "MaximumConsecutiveWorkDays");
+    }
+
+    [Fact]
+    public async Task CadastrarEEditar_DescansoZero_Retornam400NoCampoRestDays()
+    {
+        await AssertBadRequestAsync(Request("Inv " + Suffix()).WithRestDays(0), "RestDays");
     }
 
     [Fact]
@@ -134,7 +135,7 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
     {
         using var client = AdminClient();
 
-        var response = await client.PostAsJsonAsync(Route, Payload("   "));
+        var response = await client.PostAsJsonAsync(Route, Request("   ").BuildCreate());
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -146,7 +147,7 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
         var name = "Dup " + Suffix();
         await CreateAsync(client, name);
 
-        var response = await client.PostAsJsonAsync(Route, Payload($"  {name}  "));
+        var response = await client.PostAsJsonAsync(Route, Request($"  {name}  ").BuildCreate());
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         var raw = await response.Content.ReadAsStringAsync();
@@ -164,7 +165,7 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
 
         Assert.Equal(HttpStatusCode.NotFound, (await client.GetAsync($"{Route}/{Guid.NewGuid()}")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
-            (await client.PutAsJsonAsync($"{Route}/{Guid.NewGuid()}", Payload("X"))).StatusCode);
+            (await client.PutAsJsonAsync($"{Route}/{Guid.NewGuid()}", Request("X").BuildUpdate())).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound,
             (await client.PatchAsJsonAsync($"{Route}/{Guid.NewGuid()}/status", new { active = false })).StatusCode);
     }
@@ -177,8 +178,8 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
         var first = await CreateAsync(client, "A " + suffix);
         await CreateAsync(client, "B " + suffix);
 
-        var ok = await client.PutAsJsonAsync($"{Route}/{first}", Payload("Adm 5x2 " + suffix, 5, 2, 5, "Adm"));
-        var conflict = await client.PutAsJsonAsync($"{Route}/{first}", Payload("B " + suffix));
+        var ok = await client.PutAsJsonAsync($"{Route}/{first}", Request("Adm 5x2 " + suffix).WithCycle(5, 2).WithMaximum(5).WithDescription("Adm").BuildUpdate());
+        var conflict = await client.PutAsJsonAsync($"{Route}/{first}", Request("B " + suffix).BuildUpdate());
 
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         var body = await ok.Content.ReadFromJsonAsync<JsonElement>();
@@ -234,22 +235,29 @@ public sealed class WorkSchedulesApiTests : IClassFixture<ProfessionalLevelsApiF
             PermissionCodes.CreateWorkSchedules,
             PermissionCodes.EditWorkSchedules));
 
-    private static object Payload(
-        string name, int work = 6, int rest = 1, int max = 6, string? description = null) =>
-        new
+    private static WorkScheduleRequestBuilder Request(string name) => new WorkScheduleRequestBuilder().WithName(name);
+
+    private async Task AssertBadRequestAsync(WorkScheduleRequestBuilder builder, string field)
+    {
+        using var client = AdminClient();
+        var guid = await CreateAsync(client, "Base " + Suffix());
+
+        var create = await client.PostAsJsonAsync(Route, builder.BuildCreate());
+        var update = await client.PutAsJsonAsync($"{Route}/{guid}", builder.BuildUpdate());
+
+        foreach (var response in new[] { create, update })
         {
-            name,
-            consecutiveWorkDays = work,
-            restDays = rest,
-            maximumConsecutiveWorkDays = max,
-            description
-        };
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var errors = (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("errors");
+            Assert.True(errors.TryGetProperty(field, out _));
+        }
+    }
 
     private static string Suffix() => Guid.NewGuid().ToString("N")[..6].ToUpperInvariant();
 
     private static async Task<Guid> CreateAsync(HttpClient client, string name)
     {
-        var response = await client.PostAsJsonAsync(Route, Payload(name));
+        var response = await client.PostAsJsonAsync(Route, Request(name).BuildCreate());
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         return (await response.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("guid").GetGuid();
     }

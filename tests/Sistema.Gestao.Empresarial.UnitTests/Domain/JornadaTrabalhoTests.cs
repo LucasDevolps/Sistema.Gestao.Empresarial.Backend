@@ -1,24 +1,22 @@
 using Sistema.Gestao.Empresarial.Domain.Common;
 using Sistema.Gestao.Empresarial.Domain.Escalas;
+using Sistema.Gestao.Empresarial.Tests.Builders;
 
 namespace Sistema.Gestao.Empresarial.UnitTests.Domain;
 
 public sealed class JornadaTrabalhoTests
 {
-    private static readonly DateTimeOffset CriadoEm = new(2026, 9, 30, 12, 0, 0, TimeSpan.Zero);
-
-    private static JornadaTrabalho Nova(
-        string nome = "6x1",
-        int trabalho = 6,
-        int descanso = 1,
-        int maximo = 6,
-        string? descricao = null) =>
-        new(Guid.NewGuid(), nome, trabalho, descanso, maximo, descricao, CriadoEm);
+    private static readonly DateTimeOffset CriadoEm = JornadaTrabalhoBuilder.CriadoEmPadrao;
 
     [Fact]
     public void Criar_6x1_DevePersistirParametros()
     {
-        var jornada = Nova("6x1", 6, 1, 6, "Jornada assistencial 6x1");
+        var jornada = new JornadaTrabalhoBuilder()
+            .ComNome("6x1")
+            .ComCiclo(6, 1)
+            .ComMaximo(6)
+            .ComDescricao("Jornada assistencial 6x1")
+            .Build();
 
         Assert.Equal("6x1", jornada.Nome);
         Assert.Equal(6, jornada.DiasConsecutivosTrabalho);
@@ -32,7 +30,7 @@ public sealed class JornadaTrabalhoTests
     [Fact]
     public void Criar_5x2_DevePersistirParametros()
     {
-        var jornada = Nova("5x2", 5, 2, 5);
+        var jornada = new JornadaTrabalhoBuilder().ComNome("5x2").ComCiclo(5, 2).ComMaximo(5).Build();
 
         Assert.Equal(5, jornada.DiasConsecutivosTrabalho);
         Assert.Equal(2, jornada.DiasDescansoCiclo);
@@ -43,7 +41,11 @@ public sealed class JornadaTrabalhoTests
     [Fact]
     public void Criar_JornadaNaoPredefinida_DeveSerAceitaSemDependerDoNome()
     {
-        var jornada = Nova("Plantão 4x2 noturno", 4, 2, 4);
+        var jornada = new JornadaTrabalhoBuilder()
+            .ComNome("Plantão 4x2 noturno")
+            .ComCiclo(4, 2)
+            .ComMaximo(4)
+            .Build();
 
         Assert.Equal(4, jornada.DiasConsecutivosTrabalho);
         Assert.Equal(2, jornada.DiasDescansoCiclo);
@@ -52,73 +54,110 @@ public sealed class JornadaTrabalhoTests
     [Fact]
     public void Criar_DeveAplicarTrimNoNomeENaDescricao_EDescricaoVaziaViraNula()
     {
-        Assert.Equal("6x1", Nova("  6x1 ").Nome);
-        Assert.Equal("texto", Nova(descricao: "  texto ").Descricao);
-        Assert.Null(Nova(descricao: "   ").Descricao);
+        Assert.Equal("6x1", new JornadaTrabalhoBuilder().ComNome("  6x1 ").Build().Nome);
+        Assert.Equal("texto", new JornadaTrabalhoBuilder().ComDescricao("  texto ").Build().Descricao);
+        Assert.Null(new JornadaTrabalhoBuilder().ComDescricao("   ").Build().Descricao);
     }
 
-    [Theory]
-    [InlineData("")]
-    [InlineData(" ")]
-    [InlineData(null)]
-    public void Criar_NomeObrigatorio(string? nome)
+    [Fact]
+    public void Criar_SemNome_DeveSerRejeitado()
     {
-        Assert.Throws<DomainException>(() => Nova(nome!));
+        Assert.All(
+            new[] { "", " ", null },
+            nome => Assert.Throws<DomainException>(() => new JornadaTrabalhoBuilder().ComNome(nome!).Build()));
     }
 
     [Fact]
     public void Criar_NomeEDescricaoAcimaDoLimite_DevemSerRejeitados()
     {
-        Assert.Throws<DomainException>(() => Nova(new string('N', JornadaTrabalho.NomeTamanhoMaximo + 1)));
-        Assert.Throws<DomainException>(() =>
-            Nova(descricao: new string('D', JornadaTrabalho.DescricaoTamanhoMaximo + 1)));
-        Assert.NotNull(Nova(new string('N', JornadaTrabalho.NomeTamanhoMaximo)));
+        var nomeNoLimite = new string('N', JornadaTrabalho.NomeTamanhoMaximo);
+
+        Assert.Throws<DomainException>(() => new JornadaTrabalhoBuilder().ComNome(nomeNoLimite + "N").Build());
+        Assert.Throws<DomainException>(() => new JornadaTrabalhoBuilder()
+            .ComDescricao(new string('D', JornadaTrabalho.DescricaoTamanhoMaximo + 1))
+            .Build());
+        Assert.NotNull(new JornadaTrabalhoBuilder().ComNome(nomeNoLimite).Build());
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void Criar_DiasDeTrabalhoInvalidos_DevemSerRejeitados(int dias)
+    [Fact]
+    public void Criar_DiasDeTrabalhoZeroOuNegativos_DevemSerRejeitados()
     {
-        Assert.Throws<DomainException>(() => Nova(trabalho: dias));
+        Assert.All(
+            new[] { 0, -1 },
+            dias => Assert.Throws<DomainException>(() => new JornadaTrabalhoBuilder().ComDiasTrabalho(dias).Build()));
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    public void Criar_DiasDeDescansoInvalidos_DevemSerRejeitados(int dias)
+    [Fact]
+    public void Criar_DiasDeDescansoZeroOuNegativos_DevemSerRejeitados()
     {
-        Assert.Throws<DomainException>(() => Nova(descanso: dias));
+        Assert.All(
+            new[] { 0, -1 },
+            dias => Assert.Throws<DomainException>(() => new JornadaTrabalhoBuilder().ComDiasDescanso(dias).Build()));
     }
 
-    [Theory]
-    [InlineData(0)]
-    [InlineData(-1)]
-    [InlineData(7)]
-    [InlineData(8)]
-    public void Criar_MaximoConsecutivoInvalido_DeveSerRejeitado(int maximo)
+    [Fact]
+    public void Criar_MaximoForaDaFaixaDeUmASeis_DeveSerRejeitado()
     {
-        Assert.Throws<DomainException>(() => Nova(maximo: maximo));
+        Assert.All(
+            new[] { 0, -1, 7, 8 },
+            maximo => Assert.Throws<DomainException>(() => new JornadaTrabalhoBuilder().ComMaximo(maximo).Build()));
     }
 
-    [Theory]
-    [InlineData(1)]
-    [InlineData(6)]
-    public void Criar_MaximoConsecutivoNosLimites_DeveSerPermitido(int maximo)
+    [Fact]
+    public void Criar_MaximoNosLimites_DeveSerPermitido()
     {
-        Assert.Equal(maximo, Nova(maximo: maximo).MaximoDiasConsecutivos);
+        var minimo = new JornadaTrabalhoBuilder().ComCiclo(1, 1).ComMaximo(1).Build();
+        var maximo = new JornadaTrabalhoBuilder().ComCiclo(6, 1).ComMaximo(6).Build();
+
+        Assert.Equal(1, minimo.MaximoDiasConsecutivos);
+        Assert.Equal(6, maximo.MaximoDiasConsecutivos);
+    }
+
+    [Fact]
+    public void Criar_7x1_DeveSerRejeitado()
+    {
+        var builder = new JornadaTrabalhoBuilder().ComNome("7x1").ComCiclo(7, 1).ComMaximo(6);
+
+        Assert.Throws<DomainException>(builder.Build);
+    }
+
+    [Fact]
+    public void Criar_10x2ComMaximoSeis_DeveSerRejeitado()
+    {
+        var builder = new JornadaTrabalhoBuilder().ComNome("10x2").ComCiclo(10, 2).ComMaximo(6);
+
+        Assert.Throws<DomainException>(builder.Build);
+    }
+
+    [Fact]
+    public void Criar_CicloMaiorQueOMaximo_DeveSerRejeitado()
+    {
+        var builder = new JornadaTrabalhoBuilder().ComCiclo(6, 1).ComMaximo(5);
+
+        Assert.Throws<DomainException>(builder.Build);
+    }
+
+    [Fact]
+    public void Criar_CicloMenorQueOMaximo_DeveSerPermitido()
+    {
+        var jornada = new JornadaTrabalhoBuilder().ComCiclo(5, 2).ComMaximo(6).Build();
+
+        Assert.Equal(5, jornada.DiasConsecutivosTrabalho);
+        Assert.Equal(6, jornada.MaximoDiasConsecutivos);
     }
 
     [Fact]
     public void Criar_GuidVazio_DeveSerRejeitado()
     {
-        Assert.Throws<DomainException>(() => new JornadaTrabalho(Guid.Empty, "6x1", 6, 1, 6, null, CriadoEm));
+        var builder = new JornadaTrabalhoBuilder().ComGuid(Guid.Empty);
+
+        Assert.Throws<DomainException>(builder.Build);
     }
 
     [Fact]
     public void Atualizar_DevePreservarGuidEAplicarNovosValores()
     {
-        var jornada = Nova();
+        var jornada = new JornadaTrabalhoBuilder().Build();
         var guid = jornada.Guid;
         var atualizadoEm = CriadoEm.AddHours(1);
 
@@ -137,30 +176,54 @@ public sealed class JornadaTrabalhoTests
     [Fact]
     public void Atualizar_SemMudancas_NaoDeveAlterarNada()
     {
-        var jornada = Nova();
+        var jornada = new JornadaTrabalhoBuilder().Build();
 
         Assert.False(jornada.Atualizar(" 6x1 ", 6, 1, 6, null, CriadoEm.AddHours(1)));
         Assert.Equal(CriadoEm, jornada.DataAtualizacao);
     }
 
-    [Theory]
-    [InlineData(0, 1, 6)]
-    [InlineData(6, 0, 6)]
-    [InlineData(6, 1, 7)]
-    [InlineData(6, 1, 0)]
-    public void Atualizar_ValoresInvalidos_DevemSerRejeitadosSemAlterarEstado(int trabalho, int descanso, int maximo)
+    [Fact]
+    public void Atualizar_Para7x1_DeveSerRejeitadoSemAlterarEstado()
     {
-        var jornada = Nova();
+        var jornada = new JornadaTrabalhoBuilder().Build();
 
-        Assert.Throws<DomainException>(() => jornada.Atualizar("X", trabalho, descanso, maximo, null, CriadoEm));
-        Assert.Equal("6x1", jornada.Nome);
-        Assert.Equal(6, jornada.MaximoDiasConsecutivos);
+        Assert.Throws<DomainException>(() => jornada.Atualizar("7x1", 7, 1, 6, null, CriadoEm));
+        AssertJornadaPadraoInalterada(jornada);
+    }
+
+    [Fact]
+    public void Atualizar_CicloMaiorQueOMaximo_DeveSerRejeitadoSemAlterarEstado()
+    {
+        var jornada = new JornadaTrabalhoBuilder().Build();
+
+        Assert.Throws<DomainException>(() => jornada.Atualizar("X", 6, 1, 5, null, CriadoEm));
+        AssertJornadaPadraoInalterada(jornada);
+    }
+
+    [Fact]
+    public void Atualizar_MaximoSete_DeveSerRejeitadoSemAlterarEstado()
+    {
+        var jornada = new JornadaTrabalhoBuilder().Build();
+
+        Assert.Throws<DomainException>(() => jornada.Atualizar("X", 6, 1, 7, null, CriadoEm));
+        AssertJornadaPadraoInalterada(jornada);
+    }
+
+    [Fact]
+    public void Atualizar_DiasZerados_DevemSerRejeitadosSemAlterarEstado()
+    {
+        var jornada = new JornadaTrabalhoBuilder().Build();
+
+        Assert.Throws<DomainException>(() => jornada.Atualizar("X", 0, 1, 6, null, CriadoEm));
+        Assert.Throws<DomainException>(() => jornada.Atualizar("X", 6, 0, 6, null, CriadoEm));
+        Assert.Throws<DomainException>(() => jornada.Atualizar("X", 6, 1, 0, null, CriadoEm));
+        AssertJornadaPadraoInalterada(jornada);
     }
 
     [Fact]
     public void Inativar_EReativar_DevemAlternarSituacaoDeFormaIdempotente()
     {
-        var jornada = Nova();
+        var jornada = new JornadaTrabalhoBuilder().Build();
 
         jornada.Inativar(CriadoEm.AddHours(1));
         Assert.False(jornada.Ativo);
@@ -176,11 +239,20 @@ public sealed class JornadaTrabalhoTests
     [Fact]
     public void JornadaExcluida_NaoPodeSerAlteradaNemReativada()
     {
-        var jornada = Nova();
+        var jornada = new JornadaTrabalhoBuilder().Build();
         jornada.ExcluirLogicamente(Guid.NewGuid(), CriadoEm.AddHours(1));
 
         Assert.Throws<DomainException>(() => jornada.Atualizar("X", 6, 1, 6, null, CriadoEm.AddHours(2)));
         jornada.Reativar(CriadoEm.AddHours(3));
         Assert.False(jornada.Ativo);
+    }
+
+    private static void AssertJornadaPadraoInalterada(JornadaTrabalho jornada)
+    {
+        Assert.Equal("6x1", jornada.Nome);
+        Assert.Equal(6, jornada.DiasConsecutivosTrabalho);
+        Assert.Equal(1, jornada.DiasDescansoCiclo);
+        Assert.Equal(6, jornada.MaximoDiasConsecutivos);
+        Assert.Equal(CriadoEm, jornada.DataAtualizacao);
     }
 }
