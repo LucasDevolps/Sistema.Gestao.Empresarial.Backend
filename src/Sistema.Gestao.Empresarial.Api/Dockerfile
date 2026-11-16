@@ -13,7 +13,7 @@ RUN dotnet restore "src/Sistema.Gestao.Empresarial.Api/Sistema.Gestao.Empresaria
 COPY . .
 RUN dotnet publish "src/Sistema.Gestao.Empresarial.Api/Sistema.Gestao.Empresarial.Api.csproj" -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0@sha256:1fe86375600b62e6566b465da9553eef0621f13c67f40fe764cd8dbb1dee1497 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:11.0@sha256:bc0d6653979efba491ab3d6f589d691f96c309c3c3ef81325efa6978e7b7f242 AS final
 RUN apt-get update \
     && apt-get install --no-install-recommends -y curl \
     && apt-get install --only-upgrade -y libssl3t64 openssl \
